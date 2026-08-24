@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scene Matrix</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{
+    --bg:#fff; --fg:#1c1c1c; --muted:#6b7280; --line:#e3e3e6; --chip:#f3f4f6;
+    --present:#16b378; --absent:#d9534f; --alt:#e5a83b; --partial:#c98a2e; --unknown:#b0b4ba;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1e1e1e; --fg:#eaeaea; --muted:#9aa0a6; --line:#3a3a3a; --chip:#2c2c2c; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:6}
+  #title{font-weight:600}
+  .spacer{flex:1}
+  .key{display:flex;gap:10px;align-items:center;font-size:11px;color:var(--muted)}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  #wrap{overflow:auto;max-height:calc(100% - 42px)}
+  table{border-collapse:separate;border-spacing:0;font-size:12px}
+  th,td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:5px 8px;text-align:left}
+  thead th{position:sticky;top:0;background:var(--bg);z-index:3;vertical-align:bottom;
+    font-weight:600;max-width:130px;white-space:normal}
+  tbody th{position:sticky;left:0;background:var(--bg);z-index:2;font-weight:500;
+    max-width:260px;white-space:normal}
+  thead th:first-child{left:0;z-index:4}
+  td.cell{text-align:center;cursor:pointer;user-select:none;min-width:56px;font-weight:600;color:#fff}
+  td.cell:hover{outline:2px solid var(--fg);outline-offset:-2px}
+  .p-Present{background:var(--present)}
+  .p-Absent{background:var(--absent)}
+  .p-Alternate{background:var(--alt)}
+  .p-Partially{background:var(--partial)}
+  .p-Unknown{background:var(--unknown)}
+  .p-none{background:transparent;color:var(--muted);font-weight:400}
+  tfoot td,tfoot th{background:var(--chip);font-variant-numeric:tabular-nums;font-size:11px;
+    text-align:center;position:sticky;bottom:0}
+  tfoot th{left:0;text-align:left;z-index:2}
+  .cat{color:var(--muted);font-size:11px}
+  #msg{padding:24px;color:var(--muted);text-align:center;line-height:1.7}
+  code{background:var(--chip);padding:1px 4px;border-radius:3px;font-size:11px}
+  .warn{color:var(--absent)}
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="title">Scene matrix</span>
+  <span class="spacer"></span>
+  <span class="key">
+    <span><i class="sw" style="background:var(--present)"></i>Present</span>
+    <span><i class="sw" style="background:var(--absent)"></i>Absent</span>
+    <span><i class="sw" style="background:var(--alt)"></i>Alt take</span>
+    <span><i class="sw" style="background:var(--partial)"></i>Partial</span>
+    <span><i class="sw" style="background:var(--unknown)"></i>Unknown</span>
+    <span>click a cell to cycle</span>
+  </span>
+</div>
+<div id="msg">Waiting for a film&hellip;</div>
+<div id="wrap"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------------------------------------------------------- config --
+  // Change these if you ever rename a table or column.
+  var T = {
+    scenes:'Scenes', releases:'Releases', avail:'SceneAvailability',
+    sceneFilm:'Film', sceneNo:'Scene_No', sceneTitle:'Title', sceneCat:'Category', sceneKey:'Key',
+    relFilm:'Film', relTitle:'Title_On_Release', relOwn:'Ownership', relKey:'Key',
+    avScene:'Scene', avRelease:'Release', avPresence:'Presence', avKey:'Key'
+  };
+  var CYCLE = ['Present','Absent','Alternate take','Partially cut','Unknown'];
+
+  var wrap = document.getElementById('wrap');
+  var msg  = document.getElementById('msg');
+  var titleEl = document.getElementById('title');
+  var filmId = null, busy = false;
+
+  function show(html){ msg.style.display = html ? 'block' : 'none'; if(html) msg.innerHTML = html; }
+  function cls(p){
+    if (!p) return 'p-none';
+    if (p.indexOf('Alternate') === 0) return 'p-Alternate';
+    if (p.indexOf('Partial')   === 0) return 'p-Partially';
+    return 'p-' + p.split(' ')[0];
+  }
+  function glyph(p){
+    return p === 'Present' ? '\u2713'
+         : p === 'Absent'  ? '\u2715'
+         : p ? p.charAt(0).toUpperCase() : '\u00b7';
+  }
+
+  // Grist returns column-oriented data; flip it into plain objects.
+  function toRecords(t){
+    if (!t || !t.id) return [];
+    var keys = Object.keys(t), n = t.id.length, out = [];
+    for (var i=0;i<n;i++){
+      var o = {};
+      for (var k=0;k<keys.length;k++) o[keys[k]] = t[keys[k]][i];
+      out.push(o);
+    }
+    return out;
+  }
+
+  async function load(){
+    if (filmId === null || filmId === undefined){ show('Select a film.'); wrap.innerHTML=''; return; }
+    var scenes, releases, avail;
+    try {
+      var res = await Promise.all([
+        grist.docApi.fetchTable(T.scenes),
+        grist.docApi.fetchTable(T.releases),
+        grist.docApi.fetchTable(T.avail)
+      ]);
+      scenes = toRecords(res[0]); releases = toRecords(res[1]); avail = toRecords(res[2]);
+    } catch (err){
+      show('<span class="warn">Could not read the tables.</span><br>' +
+           '<span>This widget needs <code>Full document access</code>, and tables named ' +
+           '<code>Scenes</code>, <code>Releases</code> and <code>SceneAvailability</code>.</span><br>' +
+           '<span style="font-size:11px">' + String(err && err.message || err) + '</span>');
+      return;
+    }
+
+    scenes = scenes.filter(function(s){ return s[T.sceneFilm] === filmId; })
+                   .sort(function(a,b){ return (a[T.sceneNo]||0) - (b[T.sceneNo]||0); });
+    releases = releases.filter(function(r){ return r[T.relFilm] === filmId; });
+
+    if (!releases.length){ show('No releases logged for this film yet.'); wrap.innerHTML=''; return; }
+    if (!scenes.length){
+      show('No scenes logged for this film yet.<br><span style="font-size:11px">' +
+           'Add rows to <code>Scenes</code> for the moments that differ between releases - ' +
+           'you only need the contested ones.</span>');
+      wrap.innerHTML=''; return;
+    }
+    show('');
+
+    // index availability by scene|release
+    var byPair = {};
+    avail.forEach(function(a){ byPair[a[T.avScene] + '|' + a[T.avRelease]] = a; });
+
+    var html = ['<table><thead><tr><th>Scene</th>'];
+    releases.forEach(function(r){
+      var own = r[T.relOwn] ? ' \u00b7 ' + r[T.relOwn] : '';
+      html.push('<th title="' + esc(String(r[T.relTitle]||'') + own) + '">' +
+                esc(short(r[T.relTitle])) + '</th>');
+    });
+    html.push('</tr></thead><tbody>');
+
+    scenes.forEach(function(s){
+      html.push('<tr><th>' + esc(pad(s[T.sceneNo]) + ' ' + (s[T.sceneTitle]||'(untitled)')) +
+                (s[T.sceneCat] ? '<div class="cat">' + esc(s[T.sceneCat]) + '</div>' : '') + '</th>');
+      releases.forEach(function(r){
+        var a = byPair[s.id + '|' + r.id];
+        var p = a ? a[T.avPresence] : '';
+        html.push('<td class="cell ' + cls(p) + '" data-s="' + s.id + '" data-r="' + r.id +
+                  '" data-a="' + (a ? a.id : '') + '" data-p="' + esc(p||'') +
+                  '" title="' + esc(p || 'not recorded') + '">' + glyph(p) + '</td>');
+      });
+      html.push('</tr>');
+    });
+
+    html.push('</tbody><tfoot><tr><th>Coverage</th>');
+    releases.forEach(function(r){
+      var have = 0;
+      scenes.forEach(function(s){
+        var a = byPair[s.id + '|' + r.id];
+        if (a && a[T.avPresence] === 'Present') have++;
+      });
+      html.push('<td>' + have + '/' + scenes.length + '</td>');
+    });
+    html.push('</tr></tfoot></table>');
+
+    wrap.innerHTML = html.join('');
+    Array.prototype.forEach.call(wrap.querySelectorAll('td.cell'), function(td){
+      td.addEventListener('click', onCell);
+    });
+  }
+
+  function pad(n){ return (n === null || n === undefined || n === '') ? '' : String(n); }
+  function short(s){ s = String(s||''); return s.length > 34 ? s.slice(0,32) + '\u2026' : s; }
+  function esc(s){ return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  async function onCell(e){
+    if (busy) return;
+    busy = true;
+    var td = e.currentTarget;
+    var cur = td.getAttribute('data-p') || '';
+    var next = CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length];
+    var aId = td.getAttribute('data-a');
+
+    // optimistic paint
+    td.className = 'cell ' + cls(next);
+    td.textContent = glyph(next);
+    td.setAttribute('data-p', next);
+    td.title = next;
+
+    try {
+      if (aId){
+        await grist.docApi.applyUserActions([
+          ['UpdateRecord', T.avail, Number(aId), makeFields(next)]
+        ]);
+      } else {
+        var fields = makeFields(next);
+        fields[T.avScene]   = Number(td.getAttribute('data-s'));
+        fields[T.avRelease] = Number(td.getAttribute('data-r'));
+        await grist.docApi.applyUserActions([['AddRecord', T.avail, null, fields]]);
+      }
+      await load();
+    } catch (err){
+      show('<span class="warn">Write failed - this widget needs <code>Full document access</code>.</span>' +
+           '<br><span style="font-size:11px">' + esc(String(err && err.message || err)) + '</span>');
+    } finally {
+      busy = false;
+    }
+  }
+  function makeFields(p){ var f = {}; f[T.avPresence] = p; return f; }
+
+  grist.ready({ requiredAccess:'full' });
+  grist.onRecord(function(rec){
+    filmId = rec ? rec.id : null;
+    var name = rec && (rec.Original_Title || rec.English_Title);
+    titleEl.textContent = name ? ('Scene matrix \u2014 ' + name) : 'Scene matrix';
+    load();
+  });
+  // Re-render when data changes elsewhere in the document.
+  grist.onRecords(function(){ if (filmId) load(); });
+})();
+</script>
+</body>
+</html>
