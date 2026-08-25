@@ -16,21 +16,29 @@
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
     font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  #bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;
+  #bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 10px;
     border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:6}
   #title{font-weight:600}
   .spacer{flex:1}
-  .key{display:flex;gap:10px;align-items:center;font-size:11px;color:var(--muted)}
+  .key{display:flex;gap:9px;align-items:center;font-size:11px;color:var(--muted)}
   .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
-  #wrap{overflow:auto;max-height:calc(100% - 42px)}
+  #wrap{overflow:auto;height:calc(100% - 42px)}
   table{border-collapse:separate;border-spacing:0;font-size:12px}
   th,td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:5px 8px;text-align:left}
   thead th{position:sticky;top:0;background:var(--bg);z-index:3;vertical-align:bottom;
-    font-weight:600;max-width:130px;white-space:normal}
+    font-weight:600;max-width:120px;white-space:normal;font-size:11px;line-height:1.25}
+  thead th .fmt{display:block;color:var(--muted);font-weight:400}
   tbody th{position:sticky;left:0;background:var(--bg);z-index:2;font-weight:500;
-    max-width:260px;white-space:normal}
-  thead th:first-child{left:0;z-index:4}
-  td.cell{text-align:center;cursor:pointer;user-select:none;min-width:56px;font-weight:600;color:#fff}
+    min-width:230px;max-width:300px;white-space:normal}
+  thead th:first-child{left:0;z-index:4;min-width:230px}
+  .scenecell{display:flex;gap:8px;align-items:flex-start}
+  .thumb{flex:0 0 auto;width:64px;height:38px;border-radius:3px;background:#000 center/cover no-repeat;
+    border:1px solid var(--line);cursor:zoom-in}
+  .thumb.empty{background:repeating-linear-gradient(45deg,#2a2a2a,#2a2a2a 5px,#333 5px,#333 10px);cursor:default}
+  .sname{font-weight:600}
+  .smeta{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+  td.cell{text-align:center;cursor:pointer;user-select:none;min-width:58px;font-weight:600;
+    color:#fff;font-size:14px}
   td.cell:hover{outline:2px solid var(--fg);outline-offset:-2px}
   .p-Present{background:var(--present)}
   .p-Absent{background:var(--absent)}
@@ -41,10 +49,18 @@
   tfoot td,tfoot th{background:var(--chip);font-variant-numeric:tabular-nums;font-size:11px;
     text-align:center;position:sticky;bottom:0}
   tfoot th{left:0;text-align:left;z-index:2}
-  .cat{color:var(--muted);font-size:11px}
   #msg{padding:24px;color:var(--muted);text-align:center;line-height:1.7}
   code{background:var(--chip);padding:1px 4px;border-radius:3px;font-size:11px}
   .warn{color:var(--absent)}
+  #menu{position:fixed;z-index:40;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 4px 16px rgba(0,0,0,.35);display:none;overflow:hidden;min-width:160px}
+  #menu button{display:block;width:100%;text-align:left;padding:6px 12px;border:0;background:none;
+    color:var(--fg);font:inherit;cursor:pointer}
+  #menu button:hover{background:var(--chip)}
+  #menu .sep{border-top:1px solid var(--line)}
+  #box{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;
+    justify-content:center;z-index:50;cursor:zoom-out;padding:20px}
+  #box img{max-width:100%;max-height:100%;object-fit:contain}
 </style>
 </head>
 <body>
@@ -54,35 +70,42 @@
   <span class="key">
     <span><i class="sw" style="background:var(--present)"></i>Present</span>
     <span><i class="sw" style="background:var(--absent)"></i>Absent</span>
-    <span><i class="sw" style="background:var(--alt)"></i>Alt take</span>
+    <span><i class="sw" style="background:var(--alt)"></i>Alt</span>
     <span><i class="sw" style="background:var(--partial)"></i>Partial</span>
     <span><i class="sw" style="background:var(--unknown)"></i>Unknown</span>
-    <span>click a cell to cycle</span>
+    <span>&middot; click = present/absent &middot; right-click = more</span>
   </span>
 </div>
 <div id="msg">Waiting for a film&hellip;</div>
 <div id="wrap"></div>
+<div id="menu"></div>
+<div id="box"><img alt=""></div>
 
 <script>
 (function(){
   "use strict";
 
   // ---------------------------------------------------------------- config --
-  // Change these if you ever rename a table or column.
   var T = {
-    scenes:'Scenes', releases:'Releases', avail:'SceneAvailability',
-    sceneFilm:'Film', sceneNo:'Scene_No', sceneTitle:'Title', sceneCat:'Category', sceneKey:'Key',
-    relFilm:'Film', relTitle:'Title_On_Release', relOwn:'Ownership', relKey:'Key',
-    avScene:'Scene', avRelease:'Release', avPresence:'Presence', avKey:'Key'
+    scenes:'Scenes', releases:'Releases', avail:'SceneAvailability', stills:'Stills',
+    sceneFilm:'Film', sceneNo:'Scene_No', sceneTitle:'Title', sceneCat:'Category',
+    sceneTC:'Reference_Timecode',
+    relFilm:'Film', relTitle:'Title_On_Release', relFormat:'Format', relOwn:'Ownership',
+    avScene:'Scene', avRelease:'Release', avPresence:'Presence',
+    stillScene:'Scene', stillImage:'Image'
   };
-  var CYCLE = ['Present','Absent','Alternate take','Partially cut','Unknown'];
+  var STATES = ['Present','Absent','Alternate take','Partially cut','Unknown'];
 
-  var wrap = document.getElementById('wrap');
-  var msg  = document.getElementById('msg');
-  var titleEl = document.getElementById('title');
-  var filmId = null, busy = false;
+  var wrap = document.getElementById('wrap'),
+      msg  = document.getElementById('msg'),
+      titleEl = document.getElementById('title'),
+      menu = document.getElementById('menu'),
+      box  = document.getElementById('box');
+  var filmId = null, busy = false, tok = null, tokAt = 0;
 
   function show(html){ msg.style.display = html ? 'block' : 'none'; if(html) msg.innerHTML = html; }
+  function esc(s){ return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function cls(p){
     if (!p) return 'p-none';
     if (p.indexOf('Alternate') === 0) return 'p-Alternate';
@@ -90,26 +113,36 @@
     return 'p-' + p.split(' ')[0];
   }
   function glyph(p){
-    return p === 'Present' ? '\u2713'
-         : p === 'Absent'  ? '\u2715'
-         : p ? p.charAt(0).toUpperCase() : '\u00b7';
+    return p === 'Present' ? '\u2713' : p === 'Absent' ? '\u2715'
+         : p === 'Alternate take' ? '\u21c4' : p === 'Partially cut' ? '\u25d1'
+         : p === 'Unknown' ? '?' : '\u00b7';
   }
-
-  // Grist returns column-oriented data; flip it into plain objects.
   function toRecords(t){
     if (!t || !t.id) return [];
     var keys = Object.keys(t), n = t.id.length, out = [];
-    for (var i=0;i<n;i++){
-      var o = {};
-      for (var k=0;k<keys.length;k++) o[keys[k]] = t[keys[k]][i];
-      out.push(o);
-    }
+    for (var i=0;i<n;i++){ var o={}; for (var k=0;k<keys.length;k++) o[keys[k]] = t[keys[k]][i]; out.push(o); }
     return out;
   }
+  function firstAttachment(v){
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'number') return v;
+    if (Array.isArray(v)){ var a = (v[0]==='L') ? v.slice(1) : v; return a.length ? a[0] : null; }
+    return null;
+  }
+  async function accessToken(){
+    if (!tok || (Date.now()-tokAt) > 60000){
+      tok = await grist.docApi.getAccessToken({readOnly:true}); tokAt = Date.now();
+    }
+    return tok;
+  }
+  function attUrl(t, id){
+    return t.baseUrl + '/attachments/' + id + '/download?auth=' + encodeURIComponent(t.token);
+  }
+  function shorten(s,n){ s = String(s||''); return s.length > n ? s.slice(0,n-1) + '\u2026' : s; }
 
   async function load(){
     if (filmId === null || filmId === undefined){ show('Select a film.'); wrap.innerHTML=''; return; }
-    var scenes, releases, avail;
+    var scenes, releases, avail, stills = [];
     try {
       var res = await Promise.all([
         grist.docApi.fetchTable(T.scenes),
@@ -119,11 +152,12 @@
       scenes = toRecords(res[0]); releases = toRecords(res[1]); avail = toRecords(res[2]);
     } catch (err){
       show('<span class="warn">Could not read the tables.</span><br>' +
-           '<span>This widget needs <code>Full document access</code>, and tables named ' +
-           '<code>Scenes</code>, <code>Releases</code> and <code>SceneAvailability</code>.</span><br>' +
-           '<span style="font-size:11px">' + String(err && err.message || err) + '</span>');
+           'Needs <code>Full document access</code> and tables named <code>Scenes</code>, ' +
+           '<code>Releases</code>, <code>SceneAvailability</code>.<br>' +
+           '<span style="font-size:11px">' + esc(String(err && err.message || err)) + '</span>');
       return;
     }
+    try { stills = toRecords(await grist.docApi.fetchTable(T.stills)); } catch(e){ stills = []; }
 
     scenes = scenes.filter(function(s){ return s[T.sceneFilm] === filmId; })
                    .sort(function(a,b){ return (a[T.sceneNo]||0) - (b[T.sceneNo]||0); });
@@ -131,103 +165,138 @@
 
     if (!releases.length){ show('No releases logged for this film yet.'); wrap.innerHTML=''; return; }
     if (!scenes.length){
-      show('No scenes logged for this film yet.<br><span style="font-size:11px">' +
-           'Add rows to <code>Scenes</code> for the moments that differ between releases - ' +
-           'you only need the contested ones.</span>');
+      show('No scenes logged for this film yet.<br><span style="font-size:11px">Add rows to ' +
+           '<code>Scenes</code> only for moments that differ between releases.</span>');
       wrap.innerHTML=''; return;
     }
     show('');
 
-    // index availability by scene|release
+    var thumbs = {};
+    if (stills.length && (T.stillScene in stills[0])){
+      var tk = null;
+      try { tk = await accessToken(); } catch(e){ tk = null; }
+      if (tk){
+        stills.forEach(function(st){
+          var sid = st[T.stillScene], img = firstAttachment(st[T.stillImage]);
+          if (sid && img && !thumbs[sid]) thumbs[sid] = attUrl(tk, img);
+        });
+      }
+    }
+
     var byPair = {};
     avail.forEach(function(a){ byPair[a[T.avScene] + '|' + a[T.avRelease]] = a; });
 
-    var html = ['<table><thead><tr><th>Scene</th>'];
+    var h = ['<table><thead><tr><th>Scene</th>'];
     releases.forEach(function(r){
-      var own = r[T.relOwn] ? ' \u00b7 ' + r[T.relOwn] : '';
-      html.push('<th title="' + esc(String(r[T.relTitle]||'') + own) + '">' +
-                esc(short(r[T.relTitle])) + '</th>');
+      h.push('<th title="' + esc(r[T.relTitle]) + '">' + esc(shorten(r[T.relTitle],26)) +
+             '<span class="fmt">' + esc([r[T.relFormat], r[T.relOwn]].filter(Boolean).join(' \u00b7 ')) +
+             '</span></th>');
     });
-    html.push('</tr></thead><tbody>');
+    h.push('</tr></thead><tbody>');
 
     scenes.forEach(function(s){
-      html.push('<tr><th>' + esc(pad(s[T.sceneNo]) + ' ' + (s[T.sceneTitle]||'(untitled)')) +
-                (s[T.sceneCat] ? '<div class="cat">' + esc(s[T.sceneCat]) + '</div>' : '') + '</th>');
+      var url = thumbs[s.id];
+      h.push('<tr><th><div class="scenecell">' +
+             (url ? '<div class="thumb" style="background-image:url(\'' + url + '\')" data-full="' + url + '"></div>'
+                  : '<div class="thumb empty"></div>') +
+             '<div><div class="sname">' + esc((s[T.sceneNo] ? s[T.sceneNo] + '. ' : '') +
+                (s[T.sceneTitle] || '(untitled)')) + '</div>' +
+             '<div class="smeta">' + esc([s[T.sceneTC], s[T.sceneCat]].filter(Boolean).join(' \u00b7 ')) +
+             '</div></div></div></th>');
       releases.forEach(function(r){
-        var a = byPair[s.id + '|' + r.id];
-        var p = a ? a[T.avPresence] : '';
-        html.push('<td class="cell ' + cls(p) + '" data-s="' + s.id + '" data-r="' + r.id +
-                  '" data-a="' + (a ? a.id : '') + '" data-p="' + esc(p||'') +
-                  '" title="' + esc(p || 'not recorded') + '">' + glyph(p) + '</td>');
+        var a = byPair[s.id + '|' + r.id], p = a ? a[T.avPresence] : '';
+        h.push('<td class="cell ' + cls(p) + '" data-s="' + s.id + '" data-r="' + r.id +
+               '" data-a="' + (a ? a.id : '') + '" data-p="' + esc(p||'') +
+               '" title="' + esc(p || 'not recorded') + '">' + glyph(p) + '</td>');
       });
-      html.push('</tr>');
+      h.push('</tr>');
     });
 
-    html.push('</tbody><tfoot><tr><th>Coverage</th>');
+    h.push('</tbody><tfoot><tr><th>Has the scene</th>');
     releases.forEach(function(r){
       var have = 0;
       scenes.forEach(function(s){
         var a = byPair[s.id + '|' + r.id];
         if (a && a[T.avPresence] === 'Present') have++;
       });
-      html.push('<td>' + have + '/' + scenes.length + '</td>');
+      h.push('<td>' + have + '/' + scenes.length + '</td>');
     });
-    html.push('</tr></tfoot></table>');
+    h.push('</tr></tfoot></table>');
 
-    wrap.innerHTML = html.join('');
+    wrap.innerHTML = h.join('');
     Array.prototype.forEach.call(wrap.querySelectorAll('td.cell'), function(td){
-      td.addEventListener('click', onCell);
+      td.addEventListener('click', function(){
+        setCell(td, td.getAttribute('data-p') === 'Present' ? 'Absent' : 'Present');
+      });
+      td.addEventListener('contextmenu', function(e){ e.preventDefault(); openMenu(e, td); });
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.thumb[data-full]'), function(el){
+      el.addEventListener('click', function(){
+        box.querySelector('img').src = el.getAttribute('data-full');
+        box.style.display = 'flex';
+      });
     });
   }
 
-  function pad(n){ return (n === null || n === undefined || n === '') ? '' : String(n); }
-  function short(s){ s = String(s||''); return s.length > 34 ? s.slice(0,32) + '\u2026' : s; }
-  function esc(s){ return String(s === null || s === undefined ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function openMenu(e, td){
+    menu.innerHTML = '';
+    STATES.forEach(function(st){
+      var b = document.createElement('button');
+      b.textContent = glyph(st) + '  ' + st;
+      b.onclick = function(){ menu.style.display='none'; setCell(td, st); };
+      menu.appendChild(b);
+    });
+    var c = document.createElement('button');
+    c.className = 'sep'; c.textContent = '\u00b7  Clear';
+    c.onclick = function(){ menu.style.display='none'; setCell(td, null); };
+    menu.appendChild(c);
+    menu.style.display = 'block';
+    menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
+    menu.style.top  = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+  }
+  document.addEventListener('click', function(e){
+    if (!menu.contains(e.target)) menu.style.display = 'none';
+  });
+  box.addEventListener('click', function(){ box.style.display='none'; });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){ box.style.display='none'; menu.style.display='none'; }
+  });
 
-  async function onCell(e){
+  async function setCell(td, next){
     if (busy) return;
     busy = true;
-    var td = e.currentTarget;
-    var cur = td.getAttribute('data-p') || '';
-    var next = CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length];
     var aId = td.getAttribute('data-a');
-
-    // optimistic paint
     td.className = 'cell ' + cls(next);
     td.textContent = glyph(next);
-    td.setAttribute('data-p', next);
-    td.title = next;
-
+    td.setAttribute('data-p', next || '');
+    td.title = next || 'not recorded';
     try {
-      if (aId){
-        await grist.docApi.applyUserActions([
-          ['UpdateRecord', T.avail, Number(aId), makeFields(next)]
-        ]);
+      if (next === null){
+        if (aId) await grist.docApi.applyUserActions([['RemoveRecord', T.avail, Number(aId)]]);
+      } else if (aId){
+        var f1 = {}; f1[T.avPresence] = next;
+        await grist.docApi.applyUserActions([['UpdateRecord', T.avail, Number(aId), f1]]);
       } else {
-        var fields = makeFields(next);
-        fields[T.avScene]   = Number(td.getAttribute('data-s'));
-        fields[T.avRelease] = Number(td.getAttribute('data-r'));
-        await grist.docApi.applyUserActions([['AddRecord', T.avail, null, fields]]);
+        var f2 = {};
+        f2[T.avPresence] = next;
+        f2[T.avScene]    = Number(td.getAttribute('data-s'));
+        f2[T.avRelease]  = Number(td.getAttribute('data-r'));
+        await grist.docApi.applyUserActions([['AddRecord', T.avail, null, f2]]);
       }
       await load();
     } catch (err){
-      show('<span class="warn">Write failed - this widget needs <code>Full document access</code>.</span>' +
-           '<br><span style="font-size:11px">' + esc(String(err && err.message || err)) + '</span>');
-    } finally {
-      busy = false;
-    }
+      show('<span class="warn">Write failed - needs <code>Full document access</code>.</span><br>' +
+           '<span style="font-size:11px">' + esc(String(err && err.message || err)) + '</span>');
+    } finally { busy = false; }
   }
-  function makeFields(p){ var f = {}; f[T.avPresence] = p; return f; }
 
   grist.ready({ requiredAccess:'full' });
   grist.onRecord(function(rec){
     filmId = rec ? rec.id : null;
-    var name = rec && (rec.Original_Title || rec.English_Title);
-    titleEl.textContent = name ? ('Scene matrix \u2014 ' + name) : 'Scene matrix';
+    var n = rec && (rec.Original_Title || rec.English_Title);
+    titleEl.textContent = n ? ('Scene matrix \u2014 ' + n) : 'Scene matrix';
     load();
   });
-  // Re-render when data changes elsewhere in the document.
   grist.onRecords(function(){ if (filmId) load(); });
 })();
 </script>
