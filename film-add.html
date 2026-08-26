@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add Film</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #root{padding:12px;max-width:900px}
+  fieldset{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0 0 10px}
+  legend{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 5px}
+  .row{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:8px}
+  .row:last-child{margin-bottom:0}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+  input,select,textarea{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:4px;
+    background:var(--card);color:var(--fg);font:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ok)}
+  textarea{min-height:46px;resize:vertical}
+  .wide{grid-column:span 2}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;padding:7px 20px}
+  #bar{display:flex;gap:10px;align-items:center;margin-top:2px}
+  #status{font-size:12px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  .cbx{display:flex;gap:14px;align-items:center;margin-top:6px}
+  .cbx label{display:flex;gap:5px;align-items:center;margin:0;color:var(--fg);font-size:12px}
+  .cbx input{width:auto}
+  .hint{font-size:11px;color:var(--muted);margin-top:3px}
+  #dupe{display:none;border:1px solid var(--warn);background:rgba(229,168,59,.12);
+    border-radius:6px;padding:8px 11px;margin-bottom:10px;font-size:12px}
+  #dupe b{color:var(--warn)}
+  #dupe .d{margin-top:4px}
+  #dupe button{margin-left:8px;font-size:11px;padding:2px 9px;border-radius:10px;
+    border:1px solid var(--line);background:var(--chip);color:var(--fg);cursor:pointer}
+  #slug{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted)}
+  #recent{margin-top:16px;font-size:12px;color:var(--muted)}
+  #recent b{color:var(--fg)}
+  #recent div{padding:3px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:16px 0 6px;font-weight:600}
+  #tvbits{display:none}
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="dupe"></div>
+
+  <fieldset><legend>Titles</legend>
+    <div class="row">
+      <div class="wide"><label>Original title *</label>
+        <input id="f_orig" placeholder="Gli amori di Ercole"></div>
+      <div class="wide"><label>English title</label>
+        <input id="f_eng" placeholder="The Loves of Hercules"></div>
+    </div>
+    <div class="row">
+      <div class="wide"><label>Other titles (separate with |)</label>
+        <input id="f_alt" placeholder="Hercules and the Hydra | La venganza de Hercules"></div>
+      <div><label>Year</label><input id="f_year" type="number" min="1895" max="2100"></div>
+      <div><label>Country</label><input id="f_country" placeholder="IT/FR"></div>
+    </div>
+    <div class="hint">Key: <span id="slug">—</span></div>
+  </fieldset>
+
+  <fieldset><legend>What it is</legend>
+    <div class="row">
+      <div><label>Branch</label><select id="f_branch"></select></div>
+      <div><label>Setting</label><select id="f_era"></select></div>
+      <div><label>Mode</label><select id="f_mode"></select></div>
+      <div><label>Type</label><select id="f_type"></select></div>
+      <div><label>Franchise</label><select id="f_franchise"></select></div>
+    </div>
+    <div class="row" id="tvbits">
+      <div class="wide"><label>Series name</label><input id="f_series"></div>
+      <div><label>Season / episode</label><input id="f_ep" placeholder="S02E04"></div>
+    </div>
+    <div class="row">
+      <div class="wide"><label>Director</label><input id="f_dir"></div>
+      <div><label>Runtime (min)</label><input id="f_runtime" type="number" min="0"></div>
+      <div><label>Priority</label><select id="f_prio">
+        <option value="">—</option><option>1</option><option>2</option><option>3</option>
+        <option>4</option><option>5</option></select></div>
+    </div>
+    <div class="cbx"><label><input type="checkbox" id="f_adult"> Adult / explicit</label></div>
+  </fieldset>
+
+  <fieldset><legend>Status &amp; links</legend>
+    <div class="row">
+      <div><label>Research</label><select id="f_research"></select></div>
+      <div><label>Master</label><select id="f_master"></select></div>
+      <div class="wide"><label>IMDb URL</label><input id="f_imdb"></div>
+    </div>
+    <div class="row">
+      <div class="wide"><label>Reference URL</label><input id="f_ref" placeholder="dbcult, dvdcompare&hellip;"></div>
+      <div class="wide"><label>Other links</label><input id="f_links"></div>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Notes</legend>
+    <div class="row"><div style="grid-column:1/-1"><label>What to look for / best version so far</label>
+      <textarea id="f_best" placeholder="No uncut anamorphic believed to exist. Best all-rounder is the Spanish disc."></textarea></div></div>
+    <div class="row"><div style="grid-column:1/-1"><label>General notes</label>
+      <textarea id="f_notes"></textarea></div></div>
+  </fieldset>
+
+  <div id="bar">
+    <button class="btn go" id="save">Add film</button>
+    <button class="btn" id="clear">Clear</button>
+    <span id="status"></span>
+  </div>
+
+  <div id="recent"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var OPT={
+    branch:['Peplum','Biblical','Viking / Norse','Pirate / Age of Sail','Amazon / Jungle Queen',
+            'Sandokan / Eastern adventure','Barbarian / Fantasy','Medieval / Crusade','Mythic other'],
+    era:['Prehistoric','Egyptian','Greek Myth','Greek Historical','Biblical','Roman','Dark Ages',
+         'Medieval','Norse','Age of Sail','Colonial / Eastern','Mythic / Timeless','Modern'],
+    mode:['Fantasy','Historical','Mixed','Parody'],
+    type:['Feature','TV Episode','TV Movie','Serial','Short','Documentary'],
+    research:['Not started','Started','In progress','Deep dive done'],
+    master:['Not planned','Wanted','Sources gathering','Editing','Mastered','Blocked']
+  };
+  var T={films:'Films',franchises:'Franchises'};
+  var st=document.getElementById('status'),dupe=document.getElementById('dupe');
+  var films=[],franchises=[];
+
+  function el(id){return document.getElementById(id);}
+  function v(id){var e=el(id);return e.type==='checkbox'?e.checked:e.value.trim();}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function fill(id,list,blank){el(id).innerHTML=(blank?'<option value="">—</option>':'')+
+    list.map(function(x){return '<option>'+x+'</option>';}).join('');}
+
+  fill('f_branch',OPT.branch,true); fill('f_era',OPT.era,true);
+  fill('f_mode',OPT.mode,true);     fill('f_type',OPT.type);
+  fill('f_research',OPT.research);  fill('f_master',OPT.master);
+  el('f_type').value='Feature';
+  el('f_type').addEventListener('change',function(){
+    el('tvbits').style.display=(this.value==='TV Episode'||this.value==='Serial')?'grid':'none';
+  });
+
+  // ---- slug ----------------------------------------------------------------
+  function norm(s){
+    return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  }
+  function slug(){
+    var t=norm(v('f_orig')||v('f_eng'));
+    if(!t)return '';
+    var stop={'il':1,'lo':1,'la':1,'le':1,'gli':1,'i':1,'the':1,'a':1,'an':1,'de':1,'di':1,
+              'del':1,'della':1,'las':1,'los':1,'el':1,'un':1,'una':1,'des':1,'du':1};
+    var words=t.split(' ').filter(function(w){return !stop[w];}).slice(0,3);
+    var base=words.join('-');
+    var y=v('f_year');
+    var key=base+(y?'-'+y:'');
+    var taken={};films.forEach(function(f){taken[f.Key]=1;});
+    if(!taken[key])return key;
+    for(var i=2;i<40;i++){if(!taken[key+'-'+i])return key+'-'+i;}
+    return key+'-'+Date.now();
+  }
+  function refreshSlug(){el('slug').textContent=slug()||'—';}
+
+  // ---- duplicate check -----------------------------------------------------
+  function checkDupe(){
+    var o=norm(v('f_orig')),e=norm(v('f_eng')),y=v('f_year');
+    if(!o&&!e){dupe.style.display='none';return;}
+    var hits=films.filter(function(f){
+      var cands=[norm(f.Original_Title),norm(f.English_Title)]
+        .concat(String(f.Alt_Titles||'').split('|').map(norm)).filter(Boolean);
+      var nameHit=cands.some(function(c){
+        return (o&&(c===o||c.indexOf(o)>=0||o.indexOf(c)>=0))||
+               (e&&(c===e||c.indexOf(e)>=0||e.indexOf(c)>=0));});
+      if(!nameHit)return false;
+      if(y&&f.Year&&Math.abs(parseInt(f.Year,10)-Number(y))>2)return false;
+      return true;
+    }).slice(0,4);
+    if(!hits.length){dupe.style.display='none';return;}
+    dupe.innerHTML='<b>Possibly already in the database</b>'+hits.map(function(f){
+      return '<div class="d">'+esc(f.Original_Title||'')+
+        (f.Year?' ('+parseInt(f.Year,10)+')':'')+
+        (f.English_Title?' \u2014 '+esc(f.English_Title):'')+
+        '<button data-id="'+f.id+'">go to it</button></div>';}).join('');
+    dupe.style.display='block';
+    Array.prototype.forEach.call(dupe.querySelectorAll('button'),function(b){
+      b.onclick=function(){try{grist.setCursorPos({rowId:Number(b.getAttribute('data-id'))});}catch(e){}};
+    });
+  }
+
+  ['f_orig','f_eng','f_year'].forEach(function(id){
+    el(id).addEventListener('input',function(){refreshSlug();checkDupe();});
+  });
+
+  function clearForm(){
+    ['f_orig','f_eng','f_alt','f_year','f_country','f_dir','f_runtime','f_series','f_ep',
+     'f_imdb','f_ref','f_links','f_best','f_notes'].forEach(function(id){el(id).value='';});
+    el('f_adult').checked=false;
+    el('f_prio').value='';
+    el('f_branch').value='';el('f_era').value='';el('f_mode').value='';
+    el('f_type').value='Feature';el('tvbits').style.display='none';
+    el('f_research').value='Not started';el('f_master').value='Wanted';
+    if(el('f_franchise').options.length)el('f_franchise').selectedIndex=0;
+    dupe.style.display='none';refreshSlug();
+  }
+  el('clear').onclick=function(){clearForm();st.textContent='';};
+
+  function drawRecent(){
+    var last=films.slice().sort(function(a,b){return b.id-a.id;}).slice(0,6);
+    el('recent').innerHTML=last.length
+      ? '<h2>Recently added</h2>'+last.map(function(f){
+          return '<div><b>'+esc(f.Original_Title||'')+'</b> '+
+            (f.Year?parseInt(f.Year,10):'')+'</div>';}).join('')
+      : '';
+  }
+
+  el('save').onclick=async function(){
+    if(!v('f_orig')&&!v('f_eng')){st.className='bad';st.textContent='Needs at least one title.';return;}
+    st.className='';st.textContent='Saving\u2026';
+    var f={
+      Key:slug(),
+      Original_Title:v('f_orig')||v('f_eng'),
+      English_Title:v('f_eng'),
+      Alt_Titles:v('f_alt'),
+      Country:v('f_country'),
+      Director:v('f_dir'),
+      Branch:v('f_branch'), Setting_Era:v('f_era'), Mode:v('f_mode'),
+      Work_Type:v('f_type'),
+      Series_Name:v('f_series'), Season_Episode:v('f_ep'),
+      Adult:v('f_adult'),
+      Research_Status:v('f_research'), Master_Status:v('f_master'),
+      IMDb_URL:v('f_imdb'), Reference_URL:v('f_ref'), Other_Links:v('f_links'),
+      Best_Version_Notes:v('f_best'), Notes:v('f_notes')
+    };
+    if(v('f_year'))f.Year=Number(v('f_year'));
+    if(v('f_runtime'))f.Reference_Runtime_Min=Number(v('f_runtime'));
+    if(v('f_prio'))f.Priority=Number(v('f_prio'));
+    var fr=el('f_franchise').value;
+    if(fr)f.Franchise=Number(fr);
+    Object.keys(f).forEach(function(k){if(f[k]===''||f[k]===false&&k!=='Adult')delete f[k];});
+    if(f.Adult===false)delete f.Adult;
+    try{
+      var r=await grist.docApi.applyUserActions([['AddRecord',T.films,null,f]]);
+      var id=r&&r.retValues&&r.retValues[0];
+      films=await get(T.films);
+      drawRecent();
+      st.className='ok';
+      st.textContent='Added. Now add its releases.';
+      clearForm();
+      if(id){try{grist.setCursorPos({rowId:id});}catch(e){}}
+    }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
+  };
+
+  grist.ready({requiredAccess:'full'});
+  (async function(){
+    films=await get(T.films);
+    franchises=await get(T.franchises);
+    el('f_franchise').innerHTML='<option value="">—</option>'+franchises.map(function(x){
+      return '<option value="'+x.id+'">'+esc(x.Name||'')+'</option>';}).join('');
+    clearForm();drawRecent();
+  })();
+  grist.onRecords(function(){});
+})();
+</script>
+</body>
+</html>
