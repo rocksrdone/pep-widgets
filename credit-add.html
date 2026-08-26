@@ -47,6 +47,10 @@
   .cbx input{width:auto}
   .hint{font-size:11px;color:var(--muted);margin-top:4px}
   #msg{padding:30px;text-align:center;color:var(--muted)}
+  #c_type{display:flex;gap:5px;flex-wrap:wrap;padding-top:2px}
+  #c_type button{border:1px solid var(--line);background:var(--card);color:var(--muted);
+    border-radius:13px;padding:3px 10px;font:inherit;font-size:11px;cursor:pointer}
+  #c_type button.on{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
   #recent{margin-top:14px;font-size:12px}
   #recent div{padding:3px 0;border-bottom:1px solid var(--line);color:var(--muted)}
   #picker{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px 8px;
@@ -92,10 +96,7 @@
 
   <h2>The role</h2>
   <div class="row r3">
-    <div><label>Credit type</label><select id="c_type">
-      <option>Actor</option><option>Director</option><option>Writer</option>
-      <option>Cinematographer</option><option>Composer</option><option>Producer</option>
-      <option>Dub voice</option><option>Stunt</option><option>Other</option></select></div>
+    <div><label>Credit type (pick one or more)</label><div id="c_type"></div></div>
     <div><label>Character name</label><input id="c_char" placeholder="Ercole (Hercules)"></div>
     <div><label>Billing</label><input id="c_bill" type="number" min="0"></div>
   </div>
@@ -126,6 +127,24 @@
       st=document.getElementById('status'),res=document.getElementById('results'),
       picked=document.getElementById('picked');
   var film=null,people=[],chosen=null;
+  var CREDIT_TYPES=['Actor','Director','Writer','Cinematographer','Composer','Producer',
+                    'Dub voice','Stunt','Other'];
+  var typePicks={};
+  (function(){
+    var box=document.getElementById('c_type');
+    CREDIT_TYPES.forEach(function(t){
+      var b=document.createElement('button');
+      b.textContent=t;b.setAttribute('data-t',t);
+      b.onclick=function(){typePicks[t]=!typePicks[t];b.classList.toggle('on',!!typePicks[t]);};
+      box.appendChild(b);
+    });
+  })();
+  function setTypes(list){
+    typePicks={};(list||[]).forEach(function(t){typePicks[t]=true;});
+    Array.prototype.forEach.call(document.querySelectorAll('#c_type button'),function(b){
+      b.classList.toggle('on',!!typePicks[b.getAttribute('data-t')]);});
+  }
+  function getTypes(){return CREDIT_TYPES.filter(function(t){return typePicks[t];});}
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -133,6 +152,11 @@
   function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
     for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
   function names(p){return [p.Credited_Name,p.Real_Name,p.Aliases].filter(Boolean).join(' | ');}
+  function listText(v){
+    if(v==null)return '';
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).join(', ');
+    return String(v);
+  }
 
   document.getElementById('search').addEventListener('input',function(){
     var q=this.value.trim().toLowerCase();
@@ -165,6 +189,7 @@
     ['c_char','c_bill','p_cred','p_real','p_alias'].forEach(function(id){
       document.getElementById(id).value='';});
     document.getElementById('c_uncred').checked=false;
+    setTypes(['Actor']);
     chosen=null;picked.style.display='none';
     document.getElementById('newperson').style.display='block';
     document.getElementById('search').value='';res.style.display='none';
@@ -181,7 +206,7 @@
             var p=pById[c.Person]||{};
             return '<div>'+esc(p.Credited_Name||'?')+
               (c.Character_Name?' \u2014 '+esc(c.Character_Name):'')+
-              ' <span style="opacity:.7">'+esc(c.Credit_Type||'')+'</span></div>';}).join('')
+              ' <span style="opacity:.7">'+esc(listText(c.Credit_Type))+'</span></div>';}).join('')
         : '';
     }catch(e){}
   }
@@ -204,8 +229,10 @@
         pid=pr&&pr.retValues&&pr.retValues[0];
         if(!pid)throw new Error('Could not create the person');
       }
+      var types=getTypes();
+      if(!types.length){st.className='bad';st.textContent='Pick at least one credit type.';return;}
       var cf={Film:film.id,Person:pid,
-        Credit_Type:document.getElementById('c_type').value,
+        Credit_Type:['L'].concat(types),
         Character_Name:document.getElementById('c_char').value.trim(),
         Uncredited:document.getElementById('c_uncred').checked,
         Identified_From:document.getElementById('c_from').value,

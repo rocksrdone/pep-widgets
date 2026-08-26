@@ -87,6 +87,11 @@
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function listText(v){
+    if(v==null)return '';
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).join(', ');
+    return String(v);
+  }
   function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
     for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
   function att(v){if(v==null)return null;if(typeof v==='number')return v;
@@ -210,7 +215,7 @@
         h.push('<div class="p">'+(ph&&t?'<div class="ph" style="background-image:url(\''+url(t,ph)+'\')"></div>'
                                        :'<div class="ph empty"></div>')+
                '<div class="n">'+esc(p.Credited_Name||'?')+'</div>'+
-               '<div class="c">'+esc(c.Character_Name||c.Credit_Type||'')+'</div></div>');
+               '<div class="c">'+esc(c.Character_Name||listText(c.Credit_Type))+'</div></div>');
       });
       h.push('</div>');
     }
