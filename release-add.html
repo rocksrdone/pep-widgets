@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add Release</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #root{padding:12px;max-width:880px}
+  .film{font-size:12px;color:var(--muted);margin-bottom:10px}
+  .film b{color:var(--fg);font-size:14px}
+  fieldset{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0 0 10px}
+  legend{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 5px}
+  .row{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:8px}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+  input,select,textarea{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:4px;
+    background:var(--card);color:var(--fg);font:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ok)}
+  textarea{min-height:48px;resize:vertical}
+  .tk{display:grid;gap:6px;grid-template-columns:1fr 1fr 1fr auto;align-items:end;margin-bottom:6px}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;padding:7px 20px}
+  .btn.x{padding:5px 9px;color:var(--muted)}
+  .cbx{display:flex;gap:14px;align-items:center;font-size:12px;margin-top:4px}
+  .cbx label{display:flex;gap:5px;align-items:center;margin:0;color:var(--fg);font-size:12px}
+  .cbx input{width:auto}
+  #bar{display:flex;gap:10px;align-items:center;margin-top:4px}
+  #status{font-size:12px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  #msg{padding:30px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="msg">Select a film&hellip;</div>
+<div id="root" style="display:none">
+  <div class="film">Adding a release of <b id="filmname"></b></div>
+
+  <fieldset><legend>The disc</legend>
+    <div class="row">
+      <div style="grid-column:span 2"><label>Title on the release</label><input id="f_title" placeholder="Les amours d'Hercule"></div>
+      <div><label>Format</label><select id="f_format"></select></div>
+      <div><label>Label</label><select id="f_label"></select></div>
+    </div>
+    <div class="row">
+      <div><label>Country</label><input id="f_country" placeholder="FR"></div>
+      <div><label>Region</label><input id="f_region" placeholder="R2"></div>
+      <div><label>Catalog no.</label><input id="f_cat"></div>
+      <div><label>Runtime (min)</label><input id="f_runtime" type="number" min="0"></div>
+    </div>
+    <div class="row">
+      <div><label>Video standard</label><select id="f_std"></select></div>
+      <div><label>Aspect ratio</label><input id="f_ar" placeholder="2.35:1"></div>
+      <div><label>Cut status</label><select id="f_cut"></select></div>
+      <div><label>Video quality</label><select id="f_qual">
+        <option value="">—</option><option>1</option><option>2</option><option>3</option>
+        <option>4</option><option>5</option></select></div>
+    </div>
+    <div class="cbx">
+      <label><input type="checkbox" id="f_ana"> Anamorphic</label>
+      <label><input type="checkbox" id="f_ripped"> Ripped</label>
+      <label><input type="checkbox" id="f_untouched"> Untouched rip</label>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Ownership</legend>
+    <div class="row">
+      <div><label>Status</label><select id="f_own"></select></div>
+      <div><label>Location</label><input id="f_loc" placeholder="Shelf B"></div>
+      <div><label>Paid</label><input id="f_price" placeholder="12.50"></div>
+      <div style="grid-column:span 2"><label>Store / source URL</label><input id="f_url"></div>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Audio tracks</legend>
+    <div id="auds"></div>
+    <button class="btn" id="addaud">+ audio track</button>
+  </fieldset>
+
+  <fieldset><legend>Subtitle tracks</legend>
+    <div id="subs"></div>
+    <button class="btn" id="addsub">+ subtitle track</button>
+  </fieldset>
+
+  <fieldset><legend>Notes</legend>
+    <div class="row"><div style="grid-column:1/-1"><label>Print / comparison notes</label>
+      <textarea id="f_notes" placeholder="Darker print. Appears NOT cropped."></textarea></div></div>
+  </fieldset>
+
+  <div id="bar">
+    <button class="btn go" id="save">Save release</button>
+    <button class="btn" id="clear">Clear form</button>
+    <span id="status"></span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  // -- choice lists: edit to match your columns ------------------------------
+  var OPT={
+    format:['DVD','Blu-ray','UHD','VHS','Betamax','Laserdisc','16mm','TV capture','Streaming','Web download'],
+    std:['PAL','NTSC','Film 24','Progressive','Unknown'],
+    cut:['Uncut','Slightly cut','Cut','Heavily cut','Alternate cut','Extended','Unknown'],
+    own:['Owned','Wanted','Passed','Sold','Digital only','Borrowed','Lost'],
+    audType:['Original','Dub','Fandub','Commentary','Isolated score'],
+    subType:['Full','SDH','Forced','Songs only','Fan'],
+    subFmt:['VobSub','PGS','SRT','ASS','Burned-in','CC'],
+    lang:['Italian','English','French','Spanish','German','Russian','Japanese','Portuguese','Other']
+  };
+  var T={rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',labels:'Labels'};
+
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      st=document.getElementById('status');
+  var film=null,labels=[];
+
+  function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function fill(el,list,blank){el.innerHTML=(blank?'<option value="">—</option>':'')+
+    list.map(function(v){return '<option>'+v+'</option>';}).join('');}
+  function v(id){var e=document.getElementById(id);return e.type==='checkbox'?e.checked:e.value.trim();}
+
+  fill(document.getElementById('f_format'),OPT.format);
+  fill(document.getElementById('f_std'),OPT.std,true);
+  fill(document.getElementById('f_cut'),OPT.cut,true);
+  fill(document.getElementById('f_own'),OPT.own);
+
+  function trackRow(kind){
+    var d=document.createElement('div');d.className='tk';
+    var langSel='<div><label>Language</label><select class="lang">'+
+      OPT.lang.map(function(l){return '<option>'+l+'</option>';}).join('')+'</select></div>';
+    if(kind==='aud'){
+      d.innerHTML=langSel+'<div><label>Type</label><select class="type">'+
+        OPT.audType.map(function(l){return '<option>'+l+'</option>';}).join('')+'</select></div>'+
+        '<div><label style="display:flex;gap:5px;align-items:center;color:var(--fg)">'+
+        '<input type="checkbox" class="use" style="width:auto"> use in master</label></div>';
+    } else {
+      d.innerHTML=langSel+'<div><label>Type</label><select class="type">'+
+        OPT.subType.map(function(l){return '<option>'+l+'</option>';}).join('')+'</select></div>'+
+        '<div><label>Format</label><select class="fmt">'+
+        OPT.subFmt.map(function(l){return '<option>'+l+'</option>';}).join('')+'</select></div>';
+    }
+    var x=document.createElement('button');x.className='btn x';x.textContent='\u2715';
+    x.onclick=function(){d.remove();};
+    d.appendChild(x);
+    return d;
+  }
+  document.getElementById('addaud').onclick=function(){document.getElementById('auds').appendChild(trackRow('aud'));};
+  document.getElementById('addsub').onclick=function(){document.getElementById('subs').appendChild(trackRow('sub'));};
+
+  function clearForm(){
+    ['f_title','f_country','f_region','f_cat','f_runtime','f_ar','f_loc','f_price','f_url','f_notes']
+      .forEach(function(id){document.getElementById(id).value='';});
+    ['f_ana','f_ripped','f_untouched'].forEach(function(id){document.getElementById(id).checked=false;});
+    document.getElementById('f_qual').value='';
+    document.getElementById('auds').innerHTML='';
+    document.getElementById('subs').innerHTML='';
+  }
+  document.getElementById('clear').onclick=function(){clearForm();st.textContent='';};
+
+  document.getElementById('save').onclick=async function(){
+    if(!film){st.className='bad';st.textContent='No film selected.';return;}
+    if(!v('f_title')){st.className='bad';st.textContent='Give it a title first.';return;}
+    st.className='';st.textContent='Saving\u2026';
+    var lab=document.getElementById('f_label');
+    var fields={
+      Film:film.id, Title_On_Release:v('f_title'), Format:v('f_format'),
+      Country:v('f_country'), Region_Code:v('f_region'), Catalog_Number:v('f_cat'),
+      Video_Standard:v('f_std'), Aspect_Ratio:v('f_ar'), Anamorphic:v('f_ana'),
+      Cut_Status:v('f_cut'), Ownership:v('f_own'), Physical_Location:v('f_loc'),
+      Purchase_Source:'', Store_URL:v('f_url'), Ripped:v('f_ripped'),
+      Untouched_Rip:v('f_untouched'), Print_Notes:v('f_notes')
+    };
+    if(v('f_runtime'))fields.Runtime_Min=Number(v('f_runtime'));
+    if(v('f_qual'))fields.Video_Quality=Number(v('f_qual'));
+    if(v('f_price'))fields.Purchase_Price=Number(v('f_price'))||0;
+    if(lab.value)fields.Label=Number(lab.value);
+    Object.keys(fields).forEach(function(k){if(fields[k]==='')delete fields[k];});
+
+    try{
+      var res=await grist.docApi.applyUserActions([['AddRecord',T.rel,null,fields]]);
+      var rid=res&&res.retValues&&res.retValues[0];
+      if(!rid)throw new Error('No row id returned');
+      var acts=[];
+      Array.prototype.forEach.call(document.querySelectorAll('#auds .tk'),function(d){
+        acts.push(['AddRecord',T.aud,null,{Release:rid,
+          Language:d.querySelector('.lang').value,
+          Track_Type:d.querySelector('.type').value,
+          Use_In_Master:d.querySelector('.use').checked}]);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#subs .tk'),function(d){
+        acts.push(['AddRecord',T.sub,null,{Release:rid,
+          Language:d.querySelector('.lang').value,
+          Sub_Type:d.querySelector('.type').value,
+          Format:d.querySelector('.fmt').value}]);
+      });
+      if(acts.length)await grist.docApi.applyUserActions(acts);
+      st.className='ok';
+      st.textContent='Saved \u2014 '+(acts.length?acts.length+' track'+(acts.length===1?'':'s'):'no tracks')+' added.';
+      clearForm();
+    }catch(err){
+      st.className='bad';st.textContent='Failed: '+(err&&err.message||err);
+    }
+  };
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(async function(rec){
+    film=rec;
+    if(!rec){show('Select a film&hellip;');return;}
+    show('');
+    document.getElementById('filmname').textContent=
+      (rec.Original_Title||'')+(rec.Year?' ('+parseInt(rec.Year,10)+')':'');
+    if(!labels.length){
+      try{
+        labels=recs(await grist.docApi.fetchTable(T.labels));
+        document.getElementById('f_label').innerHTML='<option value="">—</option>'+
+          labels.map(function(l){return '<option value="'+l.id+'">'+
+            String(l.Name||'').replace(/</g,'&lt;')+'</option>';}).join('');
+      }catch(e){}
+    }
+  });
+})();
+</script>
+</body>
+</html>

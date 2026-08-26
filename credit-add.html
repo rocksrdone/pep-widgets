@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add Credit</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #root{padding:12px;max-width:720px}
+  .film{font-size:12px;color:var(--muted);margin-bottom:10px}
+  .film b{color:var(--fg);font-size:14px}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+  input,select,textarea{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:4px;
+    background:var(--card);color:var(--fg);font:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ok)}
+  .row{display:grid;gap:8px;margin-bottom:8px}
+  .r2{grid-template-columns:1fr 1fr}
+  .r3{grid-template-columns:1fr 1fr 90px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:16px 0 6px;font-weight:600}
+  #results{border:1px solid var(--line);border-radius:5px;max-height:170px;overflow:auto;
+    margin-top:5px;display:none;background:var(--card)}
+  #results div{padding:5px 9px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--line)}
+  #results div:last-child{border-bottom:0}
+  #results div:hover{background:var(--chip)}
+  #results .alias{color:var(--muted);font-size:11px}
+  #picked{display:none;align-items:center;gap:9px;padding:7px 10px;border-radius:5px;
+    background:var(--ok);color:#fff;margin-top:6px;font-size:12px}
+  #picked button{margin-left:auto;border:0;background:rgba(255,255,255,.25);color:#fff;
+    border-radius:10px;padding:2px 9px;cursor:pointer;font:inherit}
+  fieldset{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:8px 0 0}
+  legend{font-size:11px;color:var(--muted);padding:0 5px}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;cursor:pointer}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;padding:7px 20px}
+  #bar{display:flex;gap:10px;align-items:center;margin-top:14px}
+  #status{font-size:12px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  .cbx{display:flex;gap:5px;align-items:center;font-size:12px}
+  .cbx input{width:auto}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px}
+  #msg{padding:30px;text-align:center;color:var(--muted)}
+  #recent{margin-top:14px;font-size:12px}
+  #recent div{padding:3px 0;border-bottom:1px solid var(--line);color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="msg">Select a film&hellip;</div>
+<div id="root" style="display:none">
+  <div class="film">Adding a credit to <b id="filmname"></b></div>
+
+  <h2>Who</h2>
+  <input id="search" placeholder="Type a name - real name or screen name" autocomplete="off">
+  <div id="results"></div>
+  <div id="picked"><span id="pickedname"></span><button id="unpick">change</button></div>
+
+  <fieldset id="newperson"><legend>Not found? Create them</legend>
+    <div class="row r3">
+      <div><label>Credited as</label><input id="p_cred" placeholder="Alan Steel"></div>
+      <div><label>Real name</label><input id="p_real" placeholder="Sergio Ciani"></div>
+      <div><label>Type</label><select id="p_type">
+        <option>Actor</option><option>Director</option><option>Writer</option>
+        <option>Composer</option><option>Dub voice</option><option>Crew</option></select></div>
+    </div>
+    <div class="row"><div><label>Other aliases (separate with |)</label>
+      <input id="p_alias" placeholder="Robert Hampton | George Lincoln"></div></div>
+    <div class="hint">Leave blank if you picked someone above.</div>
+  </fieldset>
+
+  <h2>The role</h2>
+  <div class="row r3">
+    <div><label>Credit type</label><select id="c_type">
+      <option>Actor</option><option>Director</option><option>Writer</option>
+      <option>Cinematographer</option><option>Composer</option><option>Producer</option>
+      <option>Dub voice</option><option>Stunt</option><option>Other</option></select></div>
+    <div><label>Character name</label><input id="c_char" placeholder="Ercole (Hercules)"></div>
+    <div><label>Billing</label><input id="c_bill" type="number" min="0"></div>
+  </div>
+  <div class="row r2">
+    <div><label>Identified from</label><select id="c_from">
+      <option>Print credits</option><option>Research</option><option>Screenshot</option>
+      <option>Dub credits</option><option>Guess</option></select></div>
+    <div><label>Confidence</label><select id="c_conf">
+      <option>Confirmed</option><option>Probable</option><option>Guess</option><option>Disputed</option>
+      </select></div>
+  </div>
+  <div class="cbx"><input type="checkbox" id="c_uncred"><label for="c_uncred" style="margin:0;color:var(--fg)">Uncredited on screen</label></div>
+
+  <div id="bar">
+    <button class="btn go" id="save">Add credit</button>
+    <button class="btn" id="clear">Clear</button>
+    <span id="status"></span>
+  </div>
+
+  <div id="recent"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var T={people:'People',credits:'Credits'};
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      st=document.getElementById('status'),res=document.getElementById('results'),
+      picked=document.getElementById('picked');
+  var film=null,people=[],chosen=null;
+
+  function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function names(p){return [p.Credited_Name,p.Real_Name,p.Aliases].filter(Boolean).join(' | ');}
+
+  document.getElementById('search').addEventListener('input',function(){
+    var q=this.value.trim().toLowerCase();
+    if(q.length<2){res.style.display='none';return;}
+    var hits=people.filter(function(p){return names(p).toLowerCase().indexOf(q)>=0;}).slice(0,12);
+    if(!hits.length){res.style.display='none';return;}
+    res.innerHTML=hits.map(function(p){
+      var other=[p.Real_Name,p.Aliases].filter(Boolean).join(' | ');
+      return '<div data-id="'+p.id+'"><b>'+esc(p.Credited_Name)+'</b>'+
+        (other?' <span class="alias">'+esc(other)+'</span>':'')+'</div>';}).join('');
+    res.style.display='block';
+    Array.prototype.forEach.call(res.children,function(d){
+      d.onclick=function(){
+        chosen=Number(d.getAttribute('data-id'));
+        var p=people.filter(function(x){return x.id===chosen;})[0];
+        document.getElementById('pickedname').textContent=p?p.Credited_Name:'';
+        picked.style.display='flex';
+        res.style.display='none';
+        document.getElementById('search').value='';
+        document.getElementById('newperson').style.display='none';
+      };
+    });
+  });
+  document.getElementById('unpick').onclick=function(){
+    chosen=null;picked.style.display='none';
+    document.getElementById('newperson').style.display='block';
+  };
+
+  function clearForm(){
+    ['c_char','c_bill','p_cred','p_real','p_alias'].forEach(function(id){
+      document.getElementById(id).value='';});
+    document.getElementById('c_uncred').checked=false;
+    chosen=null;picked.style.display='none';
+    document.getElementById('newperson').style.display='block';
+    document.getElementById('search').value='';res.style.display='none';
+  }
+  document.getElementById('clear').onclick=function(){clearForm();st.textContent='';};
+
+  async function loadRecent(){
+    try{
+      var cs=recs(await grist.docApi.fetchTable(T.credits)).filter(function(c){return c.Film===film.id;});
+      var pById={};people.forEach(function(p){pById[p.id]=p;});
+      cs.sort(function(a,b){return (a.Billing_Order||99)-(b.Billing_Order||99);});
+      document.getElementById('recent').innerHTML= cs.length
+        ? '<h2>Already logged ('+cs.length+')</h2>'+cs.map(function(c){
+            var p=pById[c.Person]||{};
+            return '<div>'+esc(p.Credited_Name||'?')+
+              (c.Character_Name?' \u2014 '+esc(c.Character_Name):'')+
+              ' <span style="opacity:.7">'+esc(c.Credit_Type||'')+'</span></div>';}).join('')
+        : '';
+    }catch(e){}
+  }
+
+  document.getElementById('save').onclick=async function(){
+    if(!film){st.className='bad';st.textContent='No film selected.';return;}
+    var cred=document.getElementById('p_cred').value.trim();
+    if(!chosen&&!cred){st.className='bad';st.textContent='Pick someone, or fill in a credited name.';return;}
+    st.className='';st.textContent='Saving\u2026';
+    try{
+      var pid=chosen;
+      if(!pid){
+        var pf={Credited_Name:cred,
+          Real_Name:document.getElementById('p_real').value.trim(),
+          Aliases:document.getElementById('p_alias').value.trim(),
+          Person_Type:[document.getElementById('p_type').value],
+          Research_Status:'Not started'};
+        Object.keys(pf).forEach(function(k){if(pf[k]==='')delete pf[k];});
+        var pr=await grist.docApi.applyUserActions([['AddRecord',T.people,null,pf]]);
+        pid=pr&&pr.retValues&&pr.retValues[0];
+        if(!pid)throw new Error('Could not create the person');
+      }
+      var cf={Film:film.id,Person:pid,
+        Credit_Type:document.getElementById('c_type').value,
+        Character_Name:document.getElementById('c_char').value.trim(),
+        Uncredited:document.getElementById('c_uncred').checked,
+        Identified_From:document.getElementById('c_from').value,
+        Confidence:document.getElementById('c_conf').value};
+      var b=document.getElementById('c_bill').value;
+      if(b)cf.Billing_Order=Number(b);
+      Object.keys(cf).forEach(function(k){if(cf[k]==='')delete cf[k];});
+      await grist.docApi.applyUserActions([['AddRecord',T.credits,null,cf]]);
+      people=recs(await grist.docApi.fetchTable(T.people));
+      st.className='ok';st.textContent='Added.';
+      clearForm();loadRecent();
+    }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
+  };
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(async function(rec){
+    film=rec;
+    if(!rec){show('Select a film&hellip;');return;}
+    show('');
+    document.getElementById('filmname').textContent=
+      (rec.Original_Title||'')+(rec.Year?' ('+parseInt(rec.Year,10)+')':'');
+    try{people=recs(await grist.docApi.fetchTable(T.people));}catch(e){people=[];}
+    clearForm();loadRecent();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Log a Scene</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;--grey:#b0b4ba}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #root{padding:12px;max-width:760px}
+  .film{font-size:12px;color:var(--muted);margin-bottom:10px}
+  .film b{color:var(--fg);font-size:14px}
+  .row{display:grid;gap:8px;grid-template-columns:80px 1fr 130px 150px;margin-bottom:8px}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+  input,select,textarea{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:4px;
+    background:var(--card);color:var(--fg);font:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ok)}
+  textarea{min-height:46px;resize:vertical}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:16px 0 6px;font-weight:600}
+  .rel{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line);
+    border-radius:5px;margin-bottom:5px;background:var(--card)}
+  .rel .nm{flex:1;font-size:12px}
+  .rel .nm span{color:var(--muted);font-size:11px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .seg button{border:0;background:none;color:var(--muted);font:inherit;font-size:11px;
+    padding:3px 11px;cursor:pointer}
+  .seg button.on{color:#fff;font-weight:600}
+  .seg button.on[data-v="Present"]{background:var(--ok)}
+  .seg button.on[data-v="Absent"]{background:var(--bad)}
+  .seg button.on[data-v="Alternate take"]{background:var(--warn);color:#1c1c1c}
+  .seg button.on[data-v="Unknown"]{background:var(--grey)}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;cursor:pointer}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;padding:7px 20px}
+  #bar{display:flex;gap:10px;align-items:center;margin-top:14px}
+  #status{font-size:12px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  .hint{font-size:11px;color:var(--muted);margin-top:3px}
+  #msg{padding:30px;text-align:center;color:var(--muted);line-height:1.7}
+  .quick{display:flex;gap:6px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div id="msg">Select a film&hellip;</div>
+<div id="root" style="display:none">
+  <div class="film">Logging a scene in <b id="filmname"></b></div>
+
+  <div class="row">
+    <div><label>No.</label><input id="f_no" type="number" min="1"></div>
+    <div><label>Title</label><input id="f_title" placeholder="Bathtub exit"></div>
+    <div><label>Timecode</label><input id="f_tc" placeholder="00:41:12"></div>
+    <div><label>Category</label><select id="f_cat"></select></div>
+  </div>
+  <div style="margin-bottom:4px"><label>What differs</label>
+    <textarea id="f_desc" placeholder="Sexier shot trimmed from the Italian master. Runs about four seconds longer on the US print."></textarea>
+  </div>
+
+  <h2>Which releases have it</h2>
+  <div class="quick">
+    <button class="btn" data-all="Present">all present</button>
+    <button class="btn" data-all="Absent">all absent</button>
+    <button class="btn" data-all="Unknown">all unknown</button>
+  </div>
+  <div id="rels"></div>
+  <div class="hint">Leave a release blank to record nothing for it.</div>
+
+  <div id="bar">
+    <button class="btn go" id="save">Save scene</button>
+    <button class="btn" id="clear">Clear</button>
+    <span id="status"></span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var CATS=['Plot','Dialogue','Comedy','Sensual','Violence','Alternate take','Credits','Music'];
+  var STATES=['Present','Absent','Alternate take','Unknown'];
+  var T={scenes:'Scenes',rel:'Releases',avail:'SceneAvailability'};
+
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      st=document.getElementById('status'),relBox=document.getElementById('rels');
+  var film=null,releases=[],picks={};
+
+  function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+
+  document.getElementById('f_cat').innerHTML='<option value="">—</option>'+
+    CATS.map(function(c){return '<option>'+c+'</option>';}).join('');
+
+  function paint(){
+    Array.prototype.forEach.call(relBox.querySelectorAll('.seg button'),function(b){
+      b.classList.toggle('on',picks[b.getAttribute('data-r')]===b.getAttribute('data-v'));
+    });
+  }
+  function drawReleases(){
+    relBox.innerHTML='';
+    if(!releases.length){relBox.innerHTML='<div class="hint">No releases logged for this film yet.</div>';return;}
+    releases.forEach(function(r){
+      var d=document.createElement('div');d.className='rel';
+      d.innerHTML='<div class="nm">'+esc(r.Title_On_Release||'(untitled)')+
+        '<br><span>'+esc([r.Format,r.Country,r.Ownership].filter(Boolean).join(' \u00b7 '))+'</span></div>'+
+        '<div class="seg">'+STATES.map(function(s){
+          return '<button data-r="'+r.id+'" data-v="'+esc(s)+'">'+
+            (s==='Alternate take'?'alt':s.toLowerCase())+'</button>';}).join('')+'</div>';
+      relBox.appendChild(d);
+    });
+    Array.prototype.forEach.call(relBox.querySelectorAll('.seg button'),function(b){
+      b.onclick=function(){
+        var r=b.getAttribute('data-r'),val=b.getAttribute('data-v');
+        picks[r]=(picks[r]===val)?null:val;
+        paint();
+      };
+    });
+    paint();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-all]'),function(b){
+    b.onclick=function(){
+      var val=b.getAttribute('data-all');
+      releases.forEach(function(r){picks[r.id]=val;});
+      paint();
+    };
+  });
+
+  function clearForm(){
+    ['f_title','f_tc','f_desc'].forEach(function(id){document.getElementById(id).value='';});
+    document.getElementById('f_cat').value='';
+    picks={};paint();
+    nextNo();
+  }
+  document.getElementById('clear').onclick=function(){clearForm();st.textContent='';};
+
+  async function nextNo(){
+    try{
+      var all=recs(await grist.docApi.fetchTable(T.scenes)).filter(function(s){return s.Film===film.id;});
+      var mx=0;all.forEach(function(s){if((s.Scene_No||0)>mx)mx=s.Scene_No;});
+      document.getElementById('f_no').value=mx+10;
+    }catch(e){}
+  }
+
+  document.getElementById('save').onclick=async function(){
+    if(!film){st.className='bad';st.textContent='No film selected.';return;}
+    var title=document.getElementById('f_title').value.trim();
+    if(!title){st.className='bad';st.textContent='Give the scene a short title.';return;}
+    st.className='';st.textContent='Saving\u2026';
+    var f={Film:film.id,Title:title,
+      Description:document.getElementById('f_desc').value.trim(),
+      Reference_Timecode:document.getElementById('f_tc').value.trim(),
+      Category:document.getElementById('f_cat').value};
+    var no=document.getElementById('f_no').value;
+    if(no)f.Scene_No=Number(no);
+    Object.keys(f).forEach(function(k){if(f[k]==='')delete f[k];});
+    try{
+      var res=await grist.docApi.applyUserActions([['AddRecord',T.scenes,null,f]]);
+      var sid=res&&res.retValues&&res.retValues[0];
+      if(!sid)throw new Error('No row id returned');
+      var acts=[];
+      Object.keys(picks).forEach(function(rid){
+        if(picks[rid])acts.push(['AddRecord',T.avail,null,
+          {Scene:sid,Release:Number(rid),Presence:picks[rid]}]);
+      });
+      if(acts.length)await grist.docApi.applyUserActions(acts);
+      st.className='ok';
+      st.textContent='Saved \u2014 '+acts.length+' release'+(acts.length===1?'':'s')+' recorded.';
+      clearForm();
+    }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
+  };
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(async function(rec){
+    film=rec;
+    if(!rec){show('Select a film&hellip;');return;}
+    show('');
+    document.getElementById('filmname').textContent=
+      (rec.Original_Title||'')+(rec.Year?' ('+parseInt(rec.Year,10)+')':'');
+    try{
+      releases=recs(await grist.docApi.fetchTable(T.rel)).filter(function(r){return r.Film===rec.id;});
+    }catch(e){releases=[];}
+    picks={};drawReleases();nextNo();
+  });
+})();
+</script>
+</body>
+</html>

@@ -3,18 +3,32 @@
 <title>Peplum Grist widgets</title>
 <style>
  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-      max-width:640px;margin:48px auto;padding:0 20px;color:#1c1c1c}
- h1{font-size:20px} li{margin:.6em 0} code{background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:13px}
+      max-width:700px;margin:48px auto;padding:0 20px;color:#1c1c1c}
+ h1{font-size:20px} h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#666;margin-top:28px}
+ li{margin:.7em 0} code{background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:13px}
  a{color:#0b7}
 </style>
 <h1>Peplum Grist widgets</h1>
-<p>Custom widgets for the peplum film library document. Paste one of these URLs into a Grist
-Custom widget's <em>Enter Custom URL</em> box.</p>
+<p>Paste one of these URLs into a Grist Custom widget's <em>Enter Custom URL</em> box.</p>
+<h2>Entry</h2>
 <ul>
-  <li><a href="frame-compare.html">frame-compare.html</a> — synchronised frame comparison across releases.
-      Attach to <code>Stills</code>, select by <code>FrameSets</code>.</li>
-  <li><a href="scene-matrix.html">scene-matrix.html</a> — scenes × releases grid, click to set presence.
-      Attach to <code>Films</code>, needs full document access.</li>
-  <li><a href="gallery.html">gallery.html</a> — searchable stills gallery. Attach to <code>Stills</code>.</li>
+  <li><a href="release-add.html">release-add.html</a> — one form that writes a release plus all its
+      audio and subtitle tracks. Attach to <code>Films</code>.</li>
+  <li><a href="scene-logger.html">scene-logger.html</a> — log a scene difference and mark every
+      release at once. Attach to <code>Films</code>.</li>
+  <li><a href="credit-add.html">credit-add.html</a> — add a credit, searching existing people by
+      alias or creating them inline. Attach to <code>Films</code>.</li>
 </ul>
-<p>Source and setup notes: see the repository README.</p>
+<h2>Browse &amp; compare</h2>
+<ul>
+  <li><a href="film-dashboard.html">film-dashboard.html</a> — everything about one film on a page.
+      Attach to <code>Films</code>.</li>
+  <li><a href="frame-compare.html">frame-compare.html</a> — synchronised frame comparison.
+      Attach to <code>Stills</code>, select by <code>FrameSets</code>.</li>
+  <li><a href="scene-matrix.html">scene-matrix.html</a> — scenes × releases grid with thumbnails.
+      Attach to <code>Films</code>.</li>
+  <li><a href="gallery.html">gallery.html</a> — searchable stills gallery.
+      Attach to <code>Stills</code>.</li>
+</ul>
+<p>All need <strong>Full document access</strong> except gallery and frame-compare, which need
+<em>Read selected table</em> (or full, if your instance requires it for attachments).</p>
