@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Build Sheet</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #picker{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px 8px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  #q{flex:1;max-width:400px;padding:6px 11px;border:1px solid var(--line);border-radius:16px;
+    background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #hits{position:absolute;top:42px;left:12px;width:400px;max-height:290px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:last-child{border-bottom:0}
+  #hits div:hover,#hits div.sel{background:var(--chip)}
+  #hits .yr{color:var(--muted)}
+  #count{font-size:11px;color:var(--muted)}
+  .btn{padding:4px 11px;border:1px solid var(--line);border-radius:13px;background:var(--chip);
+    color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  #root{padding:14px;max-width:1000px}
+  h1{margin:0 0 3px;font-size:19px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:12px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    margin:20px 0 7px;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:3px}
+  .box{border:1px solid var(--line);border-radius:6px;padding:9px 11px;background:var(--card);
+    margin-bottom:7px}
+  .box .t{font-weight:600}
+  .box .m{color:var(--muted);font-size:11px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11px;font-weight:600}
+  td.tc{font-family:var(--mono);font-size:11px;white-space:nowrap}
+  .pill{font-size:10px;padding:1px 8px;border-radius:10px;background:var(--chip);
+    border:1px solid var(--line);white-space:nowrap}
+  .pill.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  .pill.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+  .pill.warn{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  pre{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:8px 10px;
+    font-family:var(--mono);font-size:11px;overflow-x:auto;margin:6px 0}
+  .todo{padding:3px 0;font-size:12px}
+  .todo .x{color:var(--bad);font-weight:700;margin-right:6px}
+  .todo .c{color:var(--ok);font-weight:700;margin-right:6px}
+  .empty{color:var(--muted);font-size:12px}
+  #msg{padding:30px;text-align:center;color:var(--muted);line-height:1.7}
+</style>
+</head>
+<body>
+<div id="picker">
+  <input id="q" placeholder="Search a film by title or year&hellip;" autocomplete="off">
+  <span id="count"></span>
+  <button class="btn" id="copy">Copy sheet</button>
+  <div id="hits"></div>
+</div>
+<div id="msg">Search for a film above.</div>
+<div id="root"></div>
+
+<script>
+(function(){
+  "use strict";
+  var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',scenes:'Scenes',
+         avail:'SceneAvailability',masters:'Masters'};
+  // playback-speed factor relative to the 24fps camera negative
+  var SPEED={'PAL':25/24,'NTSC':1,'Film 24':1,'Progressive':1,'Unknown':1};
+
+  var root=document.getElementById('root'),msg=document.getElementById('msg');
+  var films=[],hi=-1,suppress=0,current=null,plain='';
+
+  function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+
+  // ---- timecode ------------------------------------------------------------
+  function parseTC(s){
+    if(!s)return null;
+    var p=String(s).trim().split(':');
+    if(!p.length||p.some(function(x){return x===''||isNaN(Number(x));}))return null;
+    p=p.map(Number);
+    if(p.length===3)return p[0]*3600+p[1]*60+p[2];
+    if(p.length===2)return p[0]*60+p[1];
+    if(p.length===1)return p[0];
+    return null;
+  }
+  function fmtTC(sec){
+    if(sec==null||isNaN(sec))return '';
+    var neg=sec<0;sec=Math.abs(sec);
+    var h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+    return (neg?'-':'')+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+
+           (s<10?'0':'')+s.toFixed(2);
+  }
+  function convert(sec,fromStd,toStd){
+    if(sec==null)return null;
+    var a=SPEED[fromStd]||1,b=SPEED[toStd]||1;
+    return sec*a/b;
+  }
+
+  // ---- render --------------------------------------------------------------
+  async function build(film){
+    if(!film){show('Search for a film above.');return;}
+    current=film;
+    var d=await Promise.all([get(T.rel),get(T.aud),get(T.sub),get(T.scenes),get(T.avail),get(T.masters)]);
+    var rel=d[0].filter(function(r){return r.Film===film.id;}),
+        aud=d[1],sub=d[2],
+        scenes=d[3].filter(function(s){return s.Film===film.id;})
+                   .sort(function(a,b){return (a.Scene_No||0)-(b.Scene_No||0);}),
+        avail=d[4],
+        masters=d[5].filter(function(m){return m.Film===film.id;});
+    var relById={};rel.forEach(function(r){relById[r.id]=r;});
+    show('');
+
+    var m=masters[0]||{};
+    var vs=relById[m.Video_Source]||null;
+    var vStd=vs?(vs.Video_Standard||'Unknown'):'Unknown';
+    var txt=[];   // plain-text mirror for the copy button
+    var h=[];
+
+    h.push('<h1>'+esc(film.Original_Title||'')+
+           (film.Year?' <span style="color:var(--muted);font-weight:400">('+parseInt(film.Year,10)+')</span>':'')+
+           '</h1>');
+    h.push('<div class="sub">'+esc(m.Version_Name||'No master row yet')+
+           (m.Status?' \u00b7 '+esc(m.Status):'')+'</div>');
+    txt.push('BUILD SHEET \u2014 '+(film.Original_Title||'')+(film.Year?' ('+parseInt(film.Year,10)+')':''));
+
+    // ---- readiness
+    var todo=[];
+    if(!vs)todo.push('Set a Video_Source on the Masters row');
+    else if(!vs.Ripped)todo.push('Rip the video source ('+(vs.Title_On_Release||'')+')');
+    var useAud=aud.filter(function(a){return a.Use_In_Master&&relById[a.Release];});
+    var useSub=sub.filter(function(s){return s.Use_In_Master&&relById[s.Release];});
+    if(!useAud.length)todo.push('Tick Use_In_Master on at least one audio track');
+    if(!useSub.length)todo.push('Tick Use_In_Master on a subtitle track (or note that none exists)');
+    useAud.concat(useSub).forEach(function(t){
+      var r=relById[t.Release];
+      if(r&&!r.Ripped&&todo.indexOf('Rip '+r.Title_On_Release)<0)todo.push('Rip '+r.Title_On_Release);
+    });
+    h.push('<h2>Before you start</h2>');
+    if(!todo.length)h.push('<div class="todo"><span class="c">\u2713</span>Everything needed is logged and ripped.</div>');
+    else todo.forEach(function(t){h.push('<div class="todo"><span class="x">\u2715</span>'+esc(t)+'</div>');});
+    txt.push('','TO DO: '+(todo.length?todo.join('; '):'nothing \u2014 ready to cut'));
+
+    // ---- video source
+    h.push('<h2>Video source</h2>');
+    if(!vs)h.push('<div class="empty">No video source chosen. Pick the best-looking release on the Masters row.</div>');
+    else{
+      h.push('<div class="box"><div class="t">'+esc(vs.Title_On_Release||'')+
+        ' <span class="pill '+(vs.Ripped?'ok':'bad')+'">'+(vs.Ripped?'ripped':'not ripped')+'</span></div>'+
+        '<div class="m">'+esc([vs.Format,vs.Country,vs.Region_Code,vs.Video_Standard,
+          vs.Aspect_Ratio,(vs.Anamorphic?'anamorphic':''),vs.Resolution,
+          (vs.Runtime_Min?vs.Runtime_Min+' min':''),vs.Cut_Status].filter(Boolean).join(' \u00b7 '))+'</div>'+
+        (vs.Print_Notes?'<div class="m" style="margin-top:4px">'+esc(vs.Print_Notes)+'</div>':'')+
+        '</div>');
+      txt.push('','VIDEO: '+(vs.Title_On_Release||'')+' ['+[vs.Format,vs.Video_Standard,vs.Aspect_Ratio].filter(Boolean).join(', ')+']');
+    }
+
+    // ---- audio + subs
+    h.push('<h2>Audio to lay in</h2>');
+    if(!useAud.length)h.push('<div class="empty">Nothing ticked Use_In_Master.</div>');
+    else{
+      h.push('<table><tr><th>Language</th><th>Type</th><th>From</th><th>Standard</th><th>Work needed</th></tr>');
+      useAud.forEach(function(a){
+        var r=relById[a.Release],s=r.Video_Standard||'Unknown';
+        var same=(SPEED[s]||1)===(SPEED[vStd]||1);
+        h.push('<tr><td>'+esc(a.Language)+'</td><td>'+esc(a.Track_Type||'')+'</td><td>'+
+          esc(r.Title_On_Release||'')+'</td><td>'+esc(s)+'</td><td>'+
+          (same?'<span class="pill ok">drop straight in</span>'
+               :'<span class="pill warn">'+esc(s+' \u2192 '+vStd)+'</span>')+'</td></tr>');
+        txt.push('AUDIO: '+a.Language+' ('+(a.Track_Type||'')+') from '+r.Title_On_Release+
+                 (same?' \u2014 no conversion':' \u2014 convert '+s+' to '+vStd));
+      });
+      h.push('</table>');
+    }
+
+    h.push('<h2>Subtitles</h2>');
+    if(!useSub.length)h.push('<div class="empty">Nothing ticked Use_In_Master.</div>');
+    else{
+      h.push('<table><tr><th>Language</th><th>Type</th><th>From</th><th>Format</th><th>Work needed</th></tr>');
+      useSub.forEach(function(s){
+        var r=relById[s.Release];
+        var needsOcr=(s.Format==='VobSub'||s.Format==='PGS')&&!s.OCR_Done;
+        h.push('<tr><td>'+esc(s.Language)+'</td><td>'+esc(s.Sub_Type||'')+'</td><td>'+
+          esc(r.Title_On_Release||'')+'</td><td>'+esc(s.Format||'')+'</td><td>'+
+          (needsOcr?'<span class="pill warn">OCR with Tesseract</span>':
+                    '<span class="pill ok">ready</span>')+'</td></tr>');
+        txt.push('SUBS: '+s.Language+' from '+r.Title_On_Release+' ('+(s.Format||'')+')'+
+                 (needsOcr?' \u2014 needs OCR':''));
+      });
+      h.push('</table>');
+    }
+
+    // ---- inserts
+    h.push('<h2>Scenes to graft in</h2>');
+    var inserts=[];
+    scenes.forEach(function(sc){
+      var av=avail.filter(function(x){return x.Scene===sc.id;});
+      var onSource=vs&&av.some(function(x){return x.Release===vs.id&&x.Presence==='Present';});
+      if(onSource)return;
+      var donors=av.filter(function(x){return x.Presence==='Present'&&relById[x.Release];});
+      if(!donors.length){inserts.push({sc:sc,donor:null});return;}
+      donors.sort(function(a,b){
+        return (relById[b.Release].Video_Quality||0)-(relById[a.Release].Video_Quality||0);});
+      inserts.push({sc:sc,donor:donors[0],alts:donors.length-1});
+    });
+    if(!scenes.length)h.push('<div class="empty">No contested scenes logged for this film.</div>');
+    else if(!inserts.length)h.push('<div class="todo"><span class="c">\u2713</span>The video source already has every logged scene.</div>');
+    else{
+      h.push('<table><tr><th>Scene</th><th>Take from</th><th>Its timecode</th><th>Lands at (in '+
+             esc(vStd)+')</th></tr>');
+      inserts.forEach(function(it){
+        var sc=it.sc;
+        if(!it.donor){
+          h.push('<tr><td>'+esc((sc.Scene_No?sc.Scene_No+'. ':'')+(sc.Title||''))+
+            '</td><td colspan="3"><span class="pill bad">no release has it</span></td></tr>');
+          txt.push('INSERT: '+(sc.Title||'')+' \u2014 NO SOURCE');
+          return;
+        }
+        var r=relById[it.donor.Release];
+        var srcSec=parseTC(it.donor.Timecode_In_Release)!=null
+          ? parseTC(it.donor.Timecode_In_Release) : parseTC(sc.Reference_Timecode);
+        var dst=convert(srcSec,r.Video_Standard||'Unknown',vStd);
+        h.push('<tr><td>'+esc((sc.Scene_No?sc.Scene_No+'. ':'')+(sc.Title||''))+
+          (sc.Category?' <span class="pill">'+esc(sc.Category)+'</span>':'')+
+          '</td><td>'+esc(r.Title_On_Release||'')+
+          (it.alts?' <span class="m">(+'+it.alts+' other)</span>':'')+
+          '</td><td class="tc">'+esc(fmtTC(srcSec)||'\u2014')+
+          '<br><span class="m">'+esc(r.Video_Standard||'')+'</span></td>'+
+          '<td class="tc">'+esc(fmtTC(dst)||'\u2014')+'</td></tr>');
+        txt.push('INSERT: '+(sc.Title||'')+' from '+r.Title_On_Release+' @ '+
+                 (fmtTC(srcSec)||'?')+' \u2192 '+(fmtTC(dst)||'?'));
+      });
+      h.push('</table>');
+      h.push('<div class="m" style="margin-top:5px">Converted with PAL running 25/24 fast against ' +
+             'the 24fps negative. Treat these as a starting point and settle on a hard cut by eye.</div>');
+    }
+
+    // ---- conversion helper
+    var standards={};
+    useAud.concat(useSub).forEach(function(t){
+      var r=relById[t.Release];if(r&&r.Video_Standard)standards[r.Video_Standard]=1;});
+    inserts.forEach(function(it){
+      if(it.donor){var r=relById[it.donor.Release];if(r&&r.Video_Standard)standards[r.Video_Standard]=1;}});
+    delete standards[vStd];
+    if(Object.keys(standards).length&&vs){
+      h.push('<h2>Conversion</h2>');
+      Object.keys(standards).forEach(function(s){
+        var target=vStd==='PAL'?'AssumeFPS(25)':'AssumeFPS(24000,1001)';
+        var resize=vStd==='PAL'?'LanczosResize(1024,576)':'LanczosResize(848,480)';
+        h.push('<div class="box"><div class="t">'+esc(s)+' \u2192 '+esc(vStd)+'</div>'+
+          '<pre>FFmpegSource2("source.mkv")\nConvertToYV12(interlaced=true)\n'+target+'\n'+resize+
+          '\n\nAR=AudioRate()\nTR=Float(AR)*AR*FrameCount()/(AudioLengthF()*FrameRate())\n'+
+          'KScale=Int($7FFFFFFF/ TR)\nResampleAudio(Round(TR*KScale), KScale)\nAssumeSampleRate(AR)</pre>'+
+          '<div class="m">Widescreen resize shown; use 720x576 / 720x480 for panscan. ' +
+          'If it stutters, add QTGMC(preset="Slower", FPSDivisor=2).</div></div>');
+      });
+    }
+
+    // ---- output
+    h.push('<h2>Output</h2>');
+    h.push('<div class="box">'+
+      '<div class="m">Folder</div><div class="t">'+esc(film.Folder_Name||'\u2014')+'</div>'+
+      (m.Custom_Filename?'<div class="m" style="margin-top:6px">Filename</div><div class="t">'+
+        esc(m.Custom_Filename)+'</div>':'')+
+      (m.NAS_Path?'<div class="m" style="margin-top:6px">NAS</div><div>'+esc(m.NAS_Path)+'</div>':'')+
+      (m.Nextcloud_Path?'<div class="m" style="margin-top:6px">Nextcloud</div><div>'+
+        esc(m.Nextcloud_Path)+'</div>':'')+
+      '</div>');
+    txt.push('','FOLDER: '+(film.Folder_Name||''));
+    if(m.Custom_Filename)txt.push('FILE: '+m.Custom_Filename);
+    if(m.Open_Issues)h.push('<div class="box"><div class="m">Open issues</div>'+esc(m.Open_Issues)+'</div>');
+
+    root.innerHTML=h.join('');
+    plain=txt.join('\n');
+  }
+
+  document.getElementById('copy').onclick=function(){
+    if(!plain)return;
+    navigator.clipboard.writeText(plain).then(function(){
+      var b=document.getElementById('copy');b.textContent='Copied';
+      setTimeout(function(){b.textContent='Copy sheet';},1400);
+    });
+  };
+
+  // ---- picker --------------------------------------------------------------
+  var q=document.getElementById('q'),hits=document.getElementById('hits'),
+      cnt=document.getElementById('count');
+  function matches(f,words){
+    var hay=[f.Original_Title,f.English_Title,f.Alt_Titles,f.Year?parseInt(f.Year,10):'',
+             f.Director,f.Branch].filter(Boolean).join(' ').toLowerCase();
+    return words.every(function(w){return hay.indexOf(w)>=0;});
+  }
+  function drawHits(){
+    var s=q.value.trim().toLowerCase(),words=s?s.split(/\s+/):[];
+    var list=(words.length?films.filter(function(f){return matches(f,words);}):films).slice(0,60);
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.map(function(f,i){
+      var e=(f.English_Title&&f.English_Title!==f.Original_Title)?f.English_Title:'';
+      return '<div data-id="'+f.id+'" class="'+(i===hi?'sel':'')+'"><b>'+
+        esc(f.Original_Title||'(untitled)')+'</b> <span class="yr">'+
+        (f.Year?parseInt(f.Year,10):'')+'</span>'+
+        (e?'<br><span class="yr">'+esc(e)+'</span>':'')+'</div>';}).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=function(ev){ev.preventDefault();pick(Number(d.getAttribute('data-id')));};});
+  }
+  function pick(id){
+    var f=films.filter(function(x){return x.id===id;})[0];if(!f)return;
+    hits.style.display='none';q.value='';q.blur();hi=-1;suppress=Date.now();
+    try{grist.setCursorPos({rowId:id});}catch(e){}
+    build(f);
+  }
+  q.addEventListener('focus',function(){hi=-1;drawHits();});
+  q.addEventListener('input',function(){hi=-1;drawHits();});
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+  q.addEventListener('keydown',function(e){
+    var rows=hits.children;
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();if(!rows.length)return;
+      hi=e.key==='ArrowDown'?Math.min(hi+1,rows.length-1):Math.max(hi-1,0);
+      Array.prototype.forEach.call(rows,function(r,i){r.classList.toggle('sel',i===hi);});
+      if(rows[hi])rows[hi].scrollIntoView({block:'nearest'});
+    } else if(e.key==='Enter'){
+      if(hi>=0&&rows[hi])pick(Number(rows[hi].getAttribute('data-id')));
+      else if(rows.length===1)pick(Number(rows[0].getAttribute('data-id')));
+    } else if(e.key==='Escape'){hits.style.display='none';q.blur();}
+  });
+  async function loadFilms(){
+    films=await get(T.films);
+    films.sort(function(a,b){
+      return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
+    cnt.textContent=films.length+' films';
+  }
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;
+    if(rec)build(rec);
+  });
+  grist.onRecords(function(){ if(current)build(current); });
+  loadFilms();
+})();
+</script>
+</body>
+</html>

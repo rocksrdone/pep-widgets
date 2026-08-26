@@ -132,6 +132,15 @@
     h.push('<span class="badge '+(film.Eng_Audio_Found?'ok':'bad')+'">Eng dub '+(film.Eng_Audio_Found?'\u2713':'\u2715')+'</span>');
     h.push('<span class="badge '+(film.Eng_Subs_Found?'ok':'bad')+'">Eng subs '+(film.Eng_Subs_Found?'\u2713':'\u2715')+'</span>');
     if(film.Master_Status)h.push('<span class="badge '+(film.Master_Status==='Mastered'?'ok':'warn')+'">'+esc(film.Master_Status)+'</span>');
+    if(film.Upgrade_Status){
+      var up=film.Upgrade_Status;
+      var k=up==='Best available obtained'?'ok':(up==='Nothing good exists'?'bad':'warn');
+      h.push('<span class="badge '+k+'">'+esc(up)+'</span>');
+    }
+    if(film.Upgrade_Available){
+      var ur=(await get(T.rel)).filter(function(x){return x.id===film.Upgrade_Available;})[0];
+      if(ur)h.push('<span class="badge warn">upgrade: '+esc(ur.Title_On_Release||'')+'</span>');
+    }
     h.push('</div>');
     if(film.Best_Version_Notes)h.push('<div class="note">'+esc(film.Best_Version_Notes)+'</div>');
     h.push('</div></div>');

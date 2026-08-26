@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Person Dashboard</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #picker{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px 8px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  #q{flex:1;max-width:400px;padding:6px 11px;border:1px solid var(--line);border-radius:16px;
+    background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #hits{position:absolute;top:42px;left:12px;width:400px;max-height:290px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:last-child{border-bottom:0}
+  #hits div:hover,#hits div.sel{background:var(--chip)}
+  #hits .alias{color:var(--muted);font-size:11px}
+  #count{font-size:11px;color:var(--muted)}
+  .btn{padding:4px 11px;border:1px solid var(--line);border-radius:13px;background:var(--chip);
+    color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  .btn.on{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  #root{padding:14px;max-width:1000px}
+  .hero{display:flex;gap:16px;margin-bottom:6px}
+  .photo{flex:0 0 auto;width:118px;height:158px;border-radius:6px;border:1px solid var(--line);
+    background:var(--chip) center/cover no-repeat}
+  .photo.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 8px,var(--card) 8px,var(--card) 16px)}
+  h1{margin:0 0 2px;font-size:21px}
+  .aka{color:var(--muted);font-size:13px;margin-bottom:6px}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .badge{font-size:11px;padding:2px 9px;border-radius:11px;background:var(--chip);border:1px solid var(--line)}
+  .badge.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  .badge.warn{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    margin:20px 0 7px;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:3px}
+  .bio{max-width:660px;font-size:13px}
+  .bio.empty{color:var(--muted);font-style:italic}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11px;font-weight:600}
+  .pill{font-size:10px;padding:1px 8px;border-radius:10px;background:var(--chip);
+    border:1px solid var(--line)}
+  .pill.Confirmed{background:var(--ok);border-color:var(--ok);color:#fff}
+  .pill.Probable{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  .pill.Guess,.pill.Disputed{background:var(--bad);border-color:var(--bad);color:#fff}
+  .strip{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .strip figure{margin:0;border:1px solid var(--line);border-radius:5px;overflow:hidden;
+    background:var(--card);cursor:zoom-in}
+  .strip img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#000}
+  .strip figcaption{padding:4px 7px;font-size:11px;color:var(--muted)}
+  .empty{color:var(--muted);font-size:12px}
+  #box{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;
+    justify-content:center;z-index:50;cursor:zoom-out;padding:20px;flex-direction:column;gap:10px}
+  #box img{max-width:100%;max-height:88%;object-fit:contain}
+  #box div{color:#eee;font-size:12px}
+  #msg{padding:30px;text-align:center;color:var(--muted);line-height:1.7}
+</style>
+</head>
+<body>
+<div id="picker">
+  <input id="q" placeholder="Search a name - screen name, real name or alias&hellip;" autocomplete="off">
+  <span id="count"></span>
+  <button class="btn" id="onlytodo">Needs research</button>
+  <div id="hits"></div>
+</div>
+<div id="msg">Search for a person above.</div>
+<div id="root"></div>
+<div id="box"><img alt=""><div></div></div>
+
+<script>
+(function(){
+  "use strict";
+  var T={people:'People',credits:'Credits',films:'Films',stills:'Stills'};
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      box=document.getElementById('box');
+  var people=[],hi=-1,suppress=0,current=null,onlyTodo=false,tok=null,tokAt=0;
+
+  function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function att(v){if(v==null)return null;if(typeof v==='number')return v;
+    if(Array.isArray(v)){var a=v[0]==='L'?v.slice(1):v;return a.length?a[0]:null;}return null;}
+  async function token(){if(!tok||(Date.now()-tokAt)>60000){
+    tok=await grist.docApi.getAccessToken({readOnly:true});tokAt=Date.now();}return tok;}
+  function url(t,id){return t.baseUrl+'/attachments/'+id+'/download?auth='+encodeURIComponent(t.token);}
+  function allNames(p){
+    var out=[],seen={};
+    [p.Credited_Name,p.Real_Name,p.Aliases].forEach(function(c){
+      String(c||'').split('|').forEach(function(x){
+        x=x.trim();if(x&&!seen[x]){seen[x]=1;out.push(x);}});});
+    return out;
+  }
+  function yr(v){return v?String(v).slice(0,4):'';}
+
+  async function render(p){
+    if(!p){show('Search for a person above.');return;}
+    current=p;
+    var d=await Promise.all([get(T.credits),get(T.films),get(T.stills)]);
+    var credits=d[0].filter(function(c){return c.Person===p.id;}),
+        films=d[1],stills=d[2].filter(function(s){return s.Person===p.id;});
+    var fById={};films.forEach(function(f){fById[f.id]=f;});
+    var t=null;try{t=await token();}catch(e){}
+    show('');
+
+    var names=allNames(p),h=[];
+    var ph=att(p.Photo);
+    h.push('<div class="hero">');
+    h.push(ph&&t?'<div class="photo" style="background-image:url(\''+url(t,ph)+'\')"></div>'
+                :'<div class="photo empty"></div>');
+    h.push('<div><h1>'+esc(p.Credited_Name||'(unnamed)')+'</h1>');
+    if(names.length>1)h.push('<div class="aka">also '+esc(names.slice(1).join(' \u00b7 '))+'</div>');
+    h.push('<div class="badges">');
+    var life=[yr(p.Born),yr(p.Died)].filter(Boolean).join(' \u2013 ');
+    if(life)h.push('<span class="badge">'+esc(life)+'</span>');
+    if(p.Nationality)h.push('<span class="badge">'+esc(p.Nationality)+'</span>');
+    if(p.Birthplace)h.push('<span class="badge">'+esc(p.Birthplace)+'</span>');
+    var types=Array.isArray(p.Person_Type)?(p.Person_Type[0]==='L'?p.Person_Type.slice(1):p.Person_Type)
+              :(p.Person_Type?[p.Person_Type]:[]);
+    types.forEach(function(x){h.push('<span class="badge">'+esc(x)+'</span>');});
+    h.push('<span class="badge">'+credits.length+' credit'+(credits.length===1?'':'s')+'</span>');
+    if(p.Research_Status)h.push('<span class="badge '+
+      (p.Research_Status==='Deep dive done'?'ok':'warn')+'">'+esc(p.Research_Status)+'</span>');
+    h.push('</div></div></div>');
+
+    h.push('<h2>Biography</h2>');
+    h.push(p.Bio?'<div class="bio">'+esc(p.Bio).replace(/\n/g,'<br>')+'</div>'
+                :'<div class="bio empty">Nothing written yet. This is the gap worth filling for the '+
+                 'bit players \u2014 nobody else has done it.</div>');
+    if(p.Sources)h.push('<div class="empty" style="margin-top:6px">Sources: '+esc(p.Sources)+'</div>');
+
+    h.push('<h2>Filmography</h2>');
+    if(!credits.length)h.push('<div class="empty">No credits logged.</div>');
+    else{
+      credits.sort(function(a,b){
+        var fa=fById[a.Film]||{},fb=fById[b.Film]||{};
+        return (fa.Year||0)-(fb.Year||0);});
+      h.push('<table><tr><th>Year</th><th>Film</th><th>As</th><th>Role</th><th></th></tr>');
+      credits.forEach(function(c){
+        var f=fById[c.Film]||{};
+        h.push('<tr><td>'+(f.Year?parseInt(f.Year,10):'')+'</td>'+
+          '<td>'+esc(f.Original_Title||'?')+
+            (f.English_Title&&f.English_Title!==f.Original_Title?
+              '<br><span class="empty">'+esc(f.English_Title)+'</span>':'')+'</td>'+
+          '<td>'+esc(c.Character_Name||'')+(c.Uncredited?' <span class="pill">uncredited</span>':'')+'</td>'+
+          '<td>'+esc(c.Credit_Type||'')+'</td>'+
+          '<td>'+(c.Confidence?'<span class="pill '+esc(c.Confidence)+'">'+esc(c.Confidence)+'</span>':'')+
+          '</td></tr>');
+      });
+      h.push('</table>');
+    }
+
+    h.push('<h2>Stills</h2>');
+    var withImg=stills.filter(function(s){return att(s.Image);});
+    if(!withImg.length)h.push('<div class="empty">None tagged. Point a still\u2019s Person column at them '+
+      'and it shows up here.</div>');
+    else if(!t)h.push('<div class="empty">Could not load images.</div>');
+    else{
+      h.push('<div class="strip">');
+      withImg.forEach(function(s){
+        var u=url(t,att(s.Image)),f=fById[s.Film]||{};
+        h.push('<figure data-u="'+u+'" data-c="'+esc([f.Original_Title,s.Timecode,s.Caption]
+          .filter(Boolean).join(' \u00b7 '))+'"><img src="'+u+'" loading="lazy" alt="">'+
+          '<figcaption>'+esc([f.Original_Title,s.Timecode].filter(Boolean).join(' \u00b7 '))+
+          '</figcaption></figure>');
+      });
+      h.push('</div>');
+    }
+
+    if(p.Notes)h.push('<h2>Notes</h2><div class="bio">'+esc(p.Notes)+'</div>');
+
+    root.innerHTML=h.join('');
+    Array.prototype.forEach.call(root.querySelectorAll('.strip figure'),function(fg){
+      fg.onclick=function(){
+        box.querySelector('img').src=fg.getAttribute('data-u');
+        box.querySelector('div').textContent=fg.getAttribute('data-c');
+        box.style.display='flex';
+      };
+    });
+  }
+  box.onclick=function(){box.style.display='none';};
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')box.style.display='none';});
+
+  // ---- picker --------------------------------------------------------------
+  var q=document.getElementById('q'),hits=document.getElementById('hits'),
+      cnt=document.getElementById('count');
+  function pool(){
+    return onlyTodo?people.filter(function(p){return !p.Bio||p.Research_Status==='Not started';}):people;
+  }
+  function drawHits(){
+    var s=q.value.trim().toLowerCase(),words=s?s.split(/\s+/):[];
+    var list=pool().filter(function(p){
+      if(!words.length)return true;
+      var hay=allNames(p).join(' ').toLowerCase()+' '+String(p.Nationality||'').toLowerCase();
+      return words.every(function(w){return hay.indexOf(w)>=0;});
+    }).slice(0,60);
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.map(function(p,i){
+      var other=allNames(p).slice(1).join(' \u00b7 ');
+      return '<div data-id="'+p.id+'" class="'+(i===hi?'sel':'')+'"><b>'+
+        esc(p.Credited_Name||'(unnamed)')+'</b>'+
+        (other?' <span class="alias">'+esc(other)+'</span>':'')+'</div>';}).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=function(ev){ev.preventDefault();pick(Number(d.getAttribute('data-id')));};});
+  }
+  function pick(id){
+    var p=people.filter(function(x){return x.id===id;})[0];if(!p)return;
+    hits.style.display='none';q.value='';q.blur();hi=-1;suppress=Date.now();
+    try{grist.setCursorPos({rowId:id});}catch(e){}
+    render(p);
+  }
+  q.addEventListener('focus',function(){hi=-1;drawHits();});
+  q.addEventListener('input',function(){hi=-1;drawHits();});
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+  q.addEventListener('keydown',function(e){
+    var rows=hits.children;
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();if(!rows.length)return;
+      hi=e.key==='ArrowDown'?Math.min(hi+1,rows.length-1):Math.max(hi-1,0);
+      Array.prototype.forEach.call(rows,function(r,i){r.classList.toggle('sel',i===hi);});
+      if(rows[hi])rows[hi].scrollIntoView({block:'nearest'});
+    } else if(e.key==='Enter'){
+      if(hi>=0&&rows[hi])pick(Number(rows[hi].getAttribute('data-id')));
+      else if(rows.length===1)pick(Number(rows[0].getAttribute('data-id')));
+    } else if(e.key==='Escape'){hits.style.display='none';q.blur();}
+  });
+  document.getElementById('onlytodo').onclick=function(){
+    onlyTodo=!onlyTodo;this.classList.toggle('on',onlyTodo);
+    cnt.textContent=pool().length+' people';drawHits();
+  };
+  async function loadPeople(){
+    people=await get(T.people);
+    people.sort(function(a,b){
+      return String(a.Credited_Name||'').localeCompare(String(b.Credited_Name||''));});
+    cnt.textContent=pool().length+' people';
+  }
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;
+    if(rec&&rec.Credited_Name!==undefined)render(rec);
+  });
+  grist.onRecords(function(){ loadPeople(); });
+  loadPeople();
+})();
+</script>
+</body>
+</html>
