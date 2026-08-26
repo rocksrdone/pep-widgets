@@ -160,21 +160,6 @@
     return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
       .toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   }
-  function slug(){
-    var t=norm(v('f_orig')||v('f_eng'));
-    if(!t)return '';
-    var stop={'il':1,'lo':1,'la':1,'le':1,'gli':1,'i':1,'the':1,'a':1,'an':1,'de':1,'di':1,
-              'del':1,'della':1,'las':1,'los':1,'el':1,'un':1,'una':1,'des':1,'du':1};
-    var words=t.split(' ').filter(function(w){return !stop[w];}).slice(0,3);
-    var base=words.join('-');
-    var y=v('f_year');
-    var key=base+(y?'-'+y:'');
-    var taken={};films.forEach(function(f){taken[f.Key]=1;});
-    if(!taken[key])return key;
-    for(var i=2;i<40;i++){if(!taken[key+'-'+i])return key+'-'+i;}
-    return key+'-'+Date.now();
-  }
-  function refreshSlug(){var e=el('slug');if(e)e.textContent=slug()||'\u2014';}
 
   // ---- duplicate check -----------------------------------------------------
   function checkDupe(){
@@ -203,7 +188,7 @@
   }
 
   ['f_orig','f_eng','f_year'].forEach(function(id){
-    el(id).addEventListener('input',function(){refreshSlug();checkDupe();});
+    el(id).addEventListener('input',checkDupe);
   });
 
   function clearForm(){
@@ -215,7 +200,7 @@
     el('f_type').value='Feature';el('tvbits').style.display='none';
     el('f_research').value='Not started';el('f_master').value='Wanted';
     if(el('f_franchise').options.length)el('f_franchise').selectedIndex=0;
-    dupe.style.display='none';refreshSlug();
+    dupe.style.display='none';
   }
   el('clear').onclick=function(){clearForm();st.textContent='';};
 
