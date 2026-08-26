@@ -56,9 +56,24 @@
   .checklist div{padding:2px 0}
   .empty-msg{color:var(--muted);font-size:12px}
   #msg{padding:30px;text-align:center;color:var(--muted)}
+  #picker{position:sticky;top:0;z-index:20;background:var(--bg);padding:10px 14px 8px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  #q{flex:1;max-width:420px;padding:6px 11px;border:1px solid var(--line);border-radius:16px;
+    background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--accent)}
+  #hits{position:absolute;top:44px;left:14px;width:420px;max-height:300px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:last-child{border-bottom:0}
+  #hits div:hover,#hits div.sel{background:var(--chip)}
+  #hits .yr{color:var(--muted)}
+  #hits .st{float:right;font-size:10px;color:var(--muted)}
+  #count{font-size:11px;color:var(--muted)}
 </style>
 </head>
 <body>
+<div id="picker"><input id="q" placeholder="Search a film by title or year…" autocomplete="off"><span id="count"></span><div id="hits"></div></div>
 <div id="msg">Select a film&hellip;</div>
 <div id="root"></div>
 <script>
@@ -200,9 +215,82 @@
     root.innerHTML=h.join('');
   }
 
+  // ---------------------------------------------------------------- picker --
+  var films=[],hi=-1,suppress=0;
+  var q=document.getElementById('q'),hits=document.getElementById('hits'),
+      cnt=document.getElementById('count');
+
+  function label(f){
+    var t=f.Original_Title||f.English_Title||'(untitled)';
+    var e=(f.English_Title&&f.English_Title!==f.Original_Title)?f.English_Title:'';
+    return {t:t,e:e,y:f.Year?parseInt(f.Year,10):''};
+  }
+  function matches(f,words){
+    var hay=[f.Original_Title,f.English_Title,f.Alt_Titles,f.Year?parseInt(f.Year,10):'',
+             f.Director,f.Branch].filter(Boolean).join(' ').toLowerCase();
+    return words.every(function(w){return hay.indexOf(w)>=0;});
+  }
+  function drawHits(){
+    var s=q.value.trim().toLowerCase();
+    var words=s?s.split(/\s+/):[];
+    var list=(words.length?films.filter(function(f){return matches(f,words);}):films).slice(0,60);
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.map(function(f,i){
+      var L=label(f);
+      return '<div data-id="'+f.id+'" class="'+(i===hi?'sel':'')+'">'+
+        (f.Master_Status?'<span class="st">'+esc(f.Master_Status)+'</span>':'')+
+        '<b>'+esc(L.t)+'</b> <span class="yr">'+(L.y||'')+'</span>'+
+        (L.e?'<br><span class="yr">'+esc(L.e)+'</span>':'')+'</div>';
+    }).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=function(ev){ev.preventDefault();pick(Number(d.getAttribute('data-id')));};
+    });
+  }
+  function pick(id){
+    var f=films.filter(function(x){return x.id===id;})[0];
+    if(!f)return;
+    filmId=id;hits.style.display='none';q.value='';q.blur();hi=-1;
+    suppress=Date.now();
+    try{grist.setCursorPos({rowId:id});}catch(e){}
+    render(f);
+  }
+  q.addEventListener('focus',function(){hi=-1;drawHits();});
+  q.addEventListener('input',function(){hi=-1;drawHits();});
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+  q.addEventListener('keydown',function(e){
+    var rows=hits.children;
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();
+      if(!rows.length)return;
+      hi=e.key==='ArrowDown'?Math.min(hi+1,rows.length-1):Math.max(hi-1,0);
+      Array.prototype.forEach.call(rows,function(r,i){r.classList.toggle('sel',i===hi);});
+      if(rows[hi])rows[hi].scrollIntoView({block:'nearest'});
+    } else if(e.key==='Enter'){
+      if(hi>=0&&rows[hi])pick(Number(rows[hi].getAttribute('data-id')));
+      else if(rows.length===1)pick(Number(rows[0].getAttribute('data-id')));
+    } else if(e.key==='Escape'){hits.style.display='none';q.blur();}
+  });
+
+  async function loadFilms(){
+    try{
+      films=await get(T.films);
+      films.sort(function(a,b){
+        return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
+      cnt.textContent=films.length+' films';
+    }catch(e){films=[];}
+  }
+
   grist.ready({requiredAccess:'full'});
-  grist.onRecord(function(rec){filmId=rec?rec.id:null;render(rec);});
-  grist.onRecords(function(){});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;      // we just picked one ourselves
+    if(!rec)return;
+    filmId=rec.id;render(rec);
+  });
+  grist.onRecords(function(){ loadFilms(); });
+  loadFilms().then(function(){
+    if(filmId===null&&films.length) show('Search for a film above to begin.');
+  });
 })();
 </script>
 </body>
