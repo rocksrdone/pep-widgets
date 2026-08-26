@@ -47,6 +47,11 @@
   .cbx input{width:auto}
   .hint{font-size:11px;color:var(--muted);margin-top:4px}
   #msg{padding:30px;text-align:center;color:var(--muted)}
+  #results .mk{color:var(--ok);font-weight:600}
+  #results .mk b{color:var(--fg)}
+  #picked.isnew{background:var(--warn);color:#1c1c1c}
+  #picked.isnew button{background:rgba(0,0,0,.15);color:#1c1c1c}
+  fieldset.active{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn) inset}
   #c_type{display:flex;gap:5px;flex-wrap:wrap;padding-top:2px}
   #c_type button{border:1px solid var(--line);background:var(--card);color:var(--muted);
     border-radius:13px;padding:3px 10px;font:inherit;font-size:11px;cursor:pointer}
@@ -91,7 +96,8 @@
     </div>
     <div class="row"><div><label>Other aliases (separate with |)</label>
       <input id="p_alias" placeholder="Robert Hampton | George Lincoln"></div></div>
-    <div class="hint">Leave blank if you picked someone above.</div>
+    <div class="hint">Filled in automatically when you choose <b>Add &hellip; as a new person</b> above.
+      The person and the credit are created together when you hit Add credit.</div>
   </fieldset>
 
   <h2>The role</h2>
@@ -161,28 +167,45 @@
   document.getElementById('search').addEventListener('input',function(){
     var q=this.value.trim().toLowerCase();
     if(q.length<2){res.style.display='none';return;}
+    var raw=this.value.trim();
     var hits=people.filter(function(p){return names(p).toLowerCase().indexOf(q)>=0;}).slice(0,12);
-    if(!hits.length){res.style.display='none';return;}
     res.innerHTML=hits.map(function(p){
       var other=[p.Real_Name,p.Aliases].filter(Boolean).join(' | ');
       return '<div data-id="'+p.id+'"><b>'+esc(p.Credited_Name)+'</b>'+
-        (other?' <span class="alias">'+esc(other)+'</span>':'')+'</div>';}).join('');
+        (other?' <span class="alias">'+esc(other)+'</span>':'')+'</div>';}).join('')
+      + '<div class="mk" data-new="'+esc(raw)+'">+ Add <b>'+esc(raw)+'</b> as a new person'+
+        (hits.length?' <span class="alias">(not one of the above)</span>':'')+'</div>';
     res.style.display='block';
     Array.prototype.forEach.call(res.children,function(d){
       d.onclick=function(){
+        if(d.hasAttribute('data-new')){startNew(d.getAttribute('data-new'));return;}
         chosen=Number(d.getAttribute('data-id'));
         var p=people.filter(function(x){return x.id===chosen;})[0];
         document.getElementById('pickedname').textContent=p?p.Credited_Name:'';
-        picked.style.display='flex';
+        picked.style.display='flex';picked.className='';
         res.style.display='none';
         document.getElementById('search').value='';
         document.getElementById('newperson').style.display='none';
       };
     });
   });
+  function startNew(name){
+    chosen=null;
+    res.style.display='none';
+    document.getElementById('search').value='';
+    var np=document.getElementById('newperson');
+    np.style.display='block';np.classList.add('active');
+    document.getElementById('p_cred').value=name;
+    document.getElementById('pickedname').textContent='New person: '+name;
+    picked.style.display='flex';picked.className='isnew';
+    document.getElementById('p_real').focus();
+  }
   document.getElementById('unpick').onclick=function(){
-    chosen=null;picked.style.display='none';
-    document.getElementById('newperson').style.display='block';
+    chosen=null;picked.style.display='none';picked.className='';
+    var np=document.getElementById('newperson');
+    np.style.display='block';np.classList.remove('active');
+    ['p_cred','p_real','p_alias'].forEach(function(id){document.getElementById(id).value='';});
+    document.getElementById('search').focus();
   };
 
   function clearForm(){
@@ -190,8 +213,9 @@
       document.getElementById(id).value='';});
     document.getElementById('c_uncred').checked=false;
     setTypes(['Actor']);
-    chosen=null;picked.style.display='none';
-    document.getElementById('newperson').style.display='block';
+    chosen=null;picked.style.display='none';picked.className='';
+    var np=document.getElementById('newperson');
+    np.style.display='block';np.classList.remove('active');
     document.getElementById('search').value='';res.style.display='none';
   }
   document.getElementById('clear').onclick=function(){clearForm();st.textContent='';};
