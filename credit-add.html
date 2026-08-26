@@ -110,7 +110,7 @@
     <div><label>Identified from</label><select id="c_from">
       <option>Print credits</option><option>Research</option><option>Screenshot</option>
       <option>Dub credits</option><option>Guess</option></select></div>
-    <div><label>Confidence</label><select id="c_conf">
+    <div><label>Confidence in this identification</label><select id="c_conf">
       <option>Confirmed</option><option>Probable</option><option>Guess</option><option>Disputed</option>
       </select></div>
   </div>
@@ -246,7 +246,8 @@
         var pf={Credited_Name:cred,
           Real_Name:document.getElementById('p_real').value.trim(),
           Aliases:document.getElementById('p_alias').value.trim(),
-          Person_Type:[document.getElementById('p_type').value],
+          Person_Type:['L',document.getElementById('p_type').value],
+          Confidence:document.getElementById('c_conf').value,
           Research_Status:'Not started'};
         Object.keys(pf).forEach(function(k){if(pf[k]==='')delete pf[k];});
         var pr=await grist.docApi.applyUserActions([['AddRecord',T.people,null,pf]]);
