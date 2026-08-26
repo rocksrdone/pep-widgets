@@ -85,9 +85,7 @@
     <div class="row">
       <div class="wide"><label>Director</label><input id="f_dir"></div>
       <div><label>Runtime (min)</label><input id="f_runtime" type="number" min="0"></div>
-      <div><label>Priority</label><select id="f_prio">
-        <option value="">—</option><option>1</option><option>2</option><option>3</option>
-        <option>4</option><option>5</option></select></div>
+      <div class="wide"><label>Priority</label><select id="f_prio"></select></div>
     </div>
     <div class="cbx"><label><input type="checkbox" id="f_adult"> Adult / explicit</label></div>
   </fieldset>
@@ -131,7 +129,9 @@
     mode:['Fantasy','Historical','Mixed','Parody'],
     type:['Feature','TV Episode','TV Movie','Serial','Short','Documentary'],
     research:['Not started','Started','In progress','Deep dive done'],
-    master:['Not planned','Wanted','Sources gathering','Editing','Mastered','Blocked']
+    master:['Not planned','Wanted','Sources gathering','Editing','Mastered','Blocked'],
+    prio:['1 \u00b7 Next up','2 \u00b7 Nearly ready','3 \u00b7 Want it',
+          '4 \u00b7 Blocked','5 \u00b7 Someday']
   };
   var T={films:'Films',franchises:'Franchises'};
   var st=document.getElementById('status'),dupe=document.getElementById('dupe');
@@ -150,6 +150,7 @@
   fill('f_branch',OPT.branch,true); fill('f_era',OPT.era,true);
   fill('f_mode',OPT.mode,true);     fill('f_type',OPT.type);
   fill('f_research',OPT.research);  fill('f_master',OPT.master);
+  fill('f_prio',OPT.prio,true);
   el('f_type').value='Feature';
   el('f_type').addEventListener('change',function(){
     el('tvbits').style.display=(this.value==='TV Episode'||this.value==='Serial')?'grid':'none';
@@ -248,7 +249,7 @@
     };
     if(v('f_year'))f.Year=Number(v('f_year'));
     if(v('f_runtime'))f.Reference_Runtime_Min=Number(v('f_runtime'));
-    if(v('f_prio'))f.Priority=Number(v('f_prio'));
+    if(v('f_prio'))f.Priority=v('f_prio');
     var fr=el('f_franchise').value;
     if(fr)f.Franchise=Number(fr);
     Object.keys(f).forEach(function(k){if(f[k]===''||f[k]===false&&k!=='Adult')delete f[k];});
