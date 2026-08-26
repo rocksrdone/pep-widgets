@@ -67,7 +67,6 @@
       <div><label>Year</label><input id="f_year" type="number" min="1895" max="2100"></div>
       <div><label>Country</label><input id="f_country" placeholder="IT/FR"></div>
     </div>
-    <div class="hint">Key: <span id="slug">—</span></div>
   </fieldset>
 
   <fieldset><legend>What it is</legend>
@@ -175,7 +174,7 @@
     for(var i=2;i<40;i++){if(!taken[key+'-'+i])return key+'-'+i;}
     return key+'-'+Date.now();
   }
-  function refreshSlug(){el('slug').textContent=slug()||'—';}
+  function refreshSlug(){var e=el('slug');if(e)e.textContent=slug()||'\u2014';}
 
   // ---- duplicate check -----------------------------------------------------
   function checkDupe(){
@@ -233,7 +232,6 @@
     if(!v('f_orig')&&!v('f_eng')){st.className='bad';st.textContent='Needs at least one title.';return;}
     st.className='';st.textContent='Saving\u2026';
     var f={
-      Key:slug(),
       Original_Title:v('f_orig')||v('f_eng'),
       English_Title:v('f_eng'),
       Alt_Titles:v('f_alt'),
