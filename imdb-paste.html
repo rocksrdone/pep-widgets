@@ -37,6 +37,8 @@
   .btn[disabled]{opacity:.45;cursor:not-allowed}
   #bar{display:flex;gap:9px;align-items:center;margin:9px 0;flex-wrap:wrap}
   label.opt{display:flex;gap:5px;align-items:center;font-size:12px}
+  label.opt.hot{border:1px dashed var(--warn);border-radius:13px;padding:3px 10px}
+  label.opt.hot.on{border-style:solid;border-color:var(--ok);background:rgba(22,179,120,.12)}
   label.opt input{width:auto}
   select{padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:var(--card);
     color:var(--fg);font:inherit;font-size:12px}
@@ -69,7 +71,7 @@
     <button class="btn" id="analyse">Analyse</button>
     <label class="opt"><input type="checkbox" id="o_create" checked> create missing people</label>
     <label class="opt"><input type="checkbox" id="o_url" checked> fill blank IMDb URLs</label>
-    <label class="opt"><input type="checkbox" id="o_credit"> add credits as
+    <label class="opt hot" id="creditopt"><input type="checkbox" id="o_credit"> add credits as
       <select id="o_type">
         <option>Actor</option><option>Dub voice</option><option>Director</option>
         <option>Writer</option><option>Cinematographer</option><option>Composer</option>
@@ -152,6 +154,11 @@
   }
 
   document.getElementById('analyse').onclick=analyse;
+  document.getElementById('o_credit').addEventListener('change',function(){
+    document.getElementById('creditopt').classList.toggle('on',this.checked);
+    if(this.checked&&!film){st.className='bad';st.textContent='Pick a film in the box above.';}
+    else if(this.checked){st.className='';st.textContent='';}
+  });
 
   document.getElementById('apply').onclick=async function(){
     var doCreate=document.getElementById('o_create').checked,
@@ -194,8 +201,9 @@
       }
       people=await get(T.people);
       st.className='ok';
-      st.textContent=made+' created \u00b7 '+filled+' URLs filled'+
-        (credited?' \u00b7 '+credited+' credits added':'');
+      st.textContent=made+' created \u00b7 '+filled+' URLs filled \u00b7 '+
+        (doCredit ? credited+' credits added'
+                  : 'no credits added \u2014 tick "add credits as" and pick a film to create them');
       analyse();
     }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
   };
