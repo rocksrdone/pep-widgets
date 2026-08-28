@@ -47,6 +47,21 @@
   .p .ph.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 6px,var(--card) 6px,var(--card) 12px)}
   .p .n{font-size:11px;font-weight:600;line-height:1.25}
   .p .c{font-size:10px;color:var(--muted)}
+  .lead{font-size:11px;color:var(--muted);margin:2px 0 6px;font-weight:600}
+  details{border-top:1px solid var(--line);padding:6px 0}
+  summary{cursor:pointer;font-size:12px;font-weight:600;list-style:none;
+    display:flex;gap:7px;align-items:center;padding:2px 0}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:'\25b8';color:var(--muted);transition:transform .12s}
+  details[open]>summary::before{transform:rotate(90deg)}
+  summary b{font-weight:400;color:var(--muted);font-size:11px}
+  details>.cast,details>.crew{margin:8px 0 4px}
+  .crew{display:grid;gap:2px 16px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+  .crewrow{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:2px 0}
+  .cn{font-weight:600}
+  .cd{color:var(--muted);font-size:11px}
+  .unc{color:var(--muted);font-size:10px;border:1px solid var(--line);border-radius:8px;
+    padding:0 6px;margin-left:auto}
   table.sc{width:100%;border-collapse:collapse;font-size:12px}
   table.sc th,table.sc td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
   table.sc th{color:var(--muted);font-weight:600;font-size:11px}
@@ -205,19 +220,65 @@
       h.push('</div>');
     });
 
-    // cast
+    // ---- cast & crew, grouped -------------------------------------------
+    function typesOf(c){
+      var v=c.Credit_Type;
+      if(v==null)return ['Other'];
+      if(Array.isArray(v)){var a=(v[0]==='L'?v.slice(1):v);return a.length?a:['Other'];}
+      return [String(v)];
+    }
+    function personCard(c){
+      var p=pById[c.Person]||{},ph=att(p.Photo);
+      return '<div class="p">'+(ph&&t?'<div class="ph" style="background-image:url(\''+url(t,ph)+'\')"></div>'
+                                    :'<div class="ph empty"></div>')+
+        '<div class="n">'+esc(p.Credited_Name||'?')+'</div>'+
+        '<div class="c">'+esc(c.Character_Name||'')+'</div></div>';
+    }
+    function personRow(c){
+      var p=pById[c.Person]||{};
+      var detail=c.Character_Name||c.Notes||'';
+      return '<div class="crewrow"><span class="cn">'+esc(p.Credited_Name||'?')+'</span>'+
+        (detail?'<span class="cd">'+esc(detail)+'</span>':'')+
+        (c.Uncredited?'<span class="unc">uncredited</span>':'')+'</div>';
+    }
+
     h.push('<h2>Cast &amp; crew</h2>');
     if(!credits.length)h.push('<div class="empty-msg">None logged.</div>');
     else{
-      h.push('<div class="cast">');
-      credits.sort(function(a,b){return (a.Billing_Order||99)-(b.Billing_Order||99);}).forEach(function(c){
-        var p=pById[c.Person]||{},ph=att(p.Photo);
-        h.push('<div class="p">'+(ph&&t?'<div class="ph" style="background-image:url(\''+url(t,ph)+'\')"></div>'
-                                       :'<div class="ph empty"></div>')+
-               '<div class="n">'+esc(p.Credited_Name||'?')+'</div>'+
-               '<div class="c">'+esc(c.Character_Name||listText(c.Credit_Type))+'</div></div>');
+      var byType={};
+      credits.forEach(function(c){
+        typesOf(c).forEach(function(ty){ (byType[ty]=byType[ty]||[]).push(c); });
       });
-      h.push('</div>');
+      var bill=function(c){var b=Number(c.Billing_Order);return (b&&b>0)?b:9999;};
+      var actors=(byType['Actor']||[]).slice().sort(function(a,b){return bill(a)-bill(b);});
+      var leads=actors.filter(function(c){return bill(c)<=6;});
+      if(!leads.length)leads=actors.slice(0,6);
+      var rest=actors.filter(function(c){return leads.indexOf(c)<0;});
+
+      if(leads.length){
+        h.push('<div class="lead">Lead cast</div><div class="cast">');
+        leads.forEach(function(c){h.push(personCard(c));});
+        h.push('</div>');
+      }
+      if(rest.length){
+        h.push('<details open><summary>Supporting cast <b>'+rest.length+'</b></summary>'+
+               '<div class="cast">');
+        rest.forEach(function(c){h.push(personCard(c));});
+        h.push('</div></details>');
+      }
+      var ORDER=['Director','Writer','Cinematographer','Composer','Producer','Dub voice',
+                 'Stunt','Crew','Other'];
+      var seen={Actor:1};
+      ORDER.concat(Object.keys(byType)).forEach(function(ty){
+        if(seen[ty]||!byType[ty])return;
+        seen[ty]=1;
+        var list=byType[ty].slice().sort(function(a,b){
+          var pa=pById[a.Person]||{},pb=pById[b.Person]||{};
+          return String(pa.Credited_Name||'').localeCompare(String(pb.Credited_Name||''));});
+        h.push('<details><summary>'+esc(ty)+' <b>'+list.length+'</b></summary><div class="crew">');
+        list.forEach(function(c){h.push(personRow(c));});
+        h.push('</div></details>');
+      });
     }
 
     if(extras.length){
