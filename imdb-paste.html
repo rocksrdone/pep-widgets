@@ -256,7 +256,11 @@
         var p=plan[i];
         if(!p.use)continue;
         if(!p.person&&doCreate){
-          var f={Credited_Name:p.name,Person_Type:['L','Actor'],
+          var t=sectionTypes[p.section||'(no section)']||'Actor';
+          var PT={'Actor':'Actor','Director':'Director','Writer':'Writer','Composer':'Composer',
+                  'Dub voice':'Dub voice'};
+          var ptype=PT[t]||'Crew';
+          var f={Credited_Name:p.name,Person_Type:['L',ptype],
                  Research_Status:'Not started',Confidence:'Confirmed'};
           if(p.url)f.IMDb_URL=p.url;
           var r=await grist.docApi.applyUserActions([['AddRecord',T.people,null,f]]);
