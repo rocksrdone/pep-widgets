@@ -172,6 +172,12 @@
     var TYPES=['Actor','Dub voice','Director','Writer','Cinematographer','Composer',
                'Producer','Stunt','Other','\u2014 skip \u2014'];
     var h=[];
+    var s0=plan[0];
+    h.push('<div class="hint" style="margin-top:6px">First row parsed as \u2014 '+
+      '<b>section:</b> '+esc(s0.section||'(none)')+' \u00b7 '+
+      '<b>name:</b> '+esc(s0.name||'(none)')+' \u00b7 '+
+      '<b>url:</b> '+esc(s0.url||'(none)')+' \u00b7 '+
+      '<b>role:</b> '+esc(s0.role||'(none)')+'</div>');
     order.forEach(function(s){
       var ids=groups[s];
       h.push('<div class="sec"><span class="secname">'+esc(s)+'</span>'+
@@ -179,7 +185,8 @@
         '<select class="stype" data-s="'+esc(s)+'">'+
         TYPES.map(function(t){return '<option'+(t===sectionTypes[s]?' selected':'')+'>'+t+'</option>';}).join('')+
         '</select></div>');
-      h.push('<table>');
+      h.push('<table><tr><th style="width:22px"></th><th>Name</th><th>In your DB</th>'+
+             '<th>Role / character</th><th>IMDb id</th></tr>');
       ids.forEach(function(i){
         var p=plan[i];
         h.push('<tr><td style="width:22px"><input type="checkbox" data-i="'+i+'"'+
