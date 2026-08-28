@@ -47,6 +47,11 @@
     border-bottom:1px solid var(--line)}
   .secname{font-weight:600;font-size:12px}
   .sec select{margin-left:auto}
+  .sec input[type=checkbox]{margin:0}
+  .allbar{display:flex;gap:6px;margin-top:10px}
+  .mini{border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:12px;
+    padding:3px 10px;font:inherit;font-size:11px;cursor:pointer}
+  .mini:hover{border-color:var(--muted)}
   th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-size:11px;font-weight:600}
   td.u{font-family:var(--mono);font-size:10px;color:var(--muted)}
@@ -126,6 +131,13 @@
     }
     return false;
   }
+  // sections that are ticked by default; everything else comes in unticked
+  function wantedByDefault(sec){
+    var s=String(sec||'').toLowerCase();
+    if(/recently viewed|more from|you may|related/.test(s))return false;
+    return /cast|direct|writ|screenplay|story|composer|music|score|cinematograph|photograph|stunt/
+      .test(s) && !/assistant direct|second unit|art direct/.test(s);
+  }
   function guessType(sec){
     var s=String(sec||'').toLowerCase();
     if(/dub|voice|italian version|french version|doppiat/.test(s))return 'Dub voice';
@@ -164,7 +176,7 @@
       var hit=idx[norm(name)]||null;
       plan.push({section:section,name:name,url:url,role:role,person:hit,
                  status: hit ? (hit.IMDb_URL ? 'have' : (url?'fill':'have')) : 'new',
-                 use:true});
+                 use:wantedByDefault(section)});
     });
     // one credit-type choice per section, pre-guessed
     sectionTypes={};
@@ -191,6 +203,9 @@
       p.dupe = p.person ? creditExists(p.person.id,t) : false;
     });
     var h=[];
+    h.push('<div class="allbar"><button class="mini" data-all="1">check everything</button>'+
+           '<button class="mini" data-all="0">uncheck everything</button>'+
+           '<button class="mini" data-all="d">back to defaults</button></div>');
     var s0=plan[0];
     h.push('<div class="hint" style="margin-top:6px">First row parsed as \u2014 '+
       '<b>section:</b> '+esc(s0.section||'(none)')+' \u00b7 '+
@@ -199,8 +214,11 @@
       '<b>role:</b> '+esc(s0.role||'(none)')+'</div>');
     order.forEach(function(s){
       var ids=groups[s];
-      h.push('<div class="sec"><span class="secname">'+esc(s)+'</span>'+
-        '<span class="hint">'+ids.length+'</span>'+
+      var on=ids.filter(function(i){return plan[i].use;}).length;
+      h.push('<div class="sec"><input type="checkbox" class="secall" data-s="'+esc(s)+'"'+
+        (on===ids.length?' checked':'')+(on>0&&on<ids.length?' data-part="1"':'')+'>'+
+        '<span class="secname">'+esc(s)+'</span>'+
+        '<span class="hint">'+on+' of '+ids.length+'</span>'+
         '<select class="stype" data-s="'+esc(s)+'">'+
         TYPES.map(function(t){return '<option'+(t===sectionTypes[s]?' selected':'')+'>'+t+'</option>';}).join('')+
         '</select></div>');
@@ -222,13 +240,31 @@
     });
     var n=plan.filter(function(p){return p.status==='new';}).length,
         f=plan.filter(function(p){return p.status==='fill';}).length;
-    var dupes=plan.filter(function(p){return p.dupe;}).length;
-    h.push('<div class="hint">'+plan.length+' rows \u00b7 '+n+' new \u00b7 '+f+
+    var dupes=plan.filter(function(p){return p.dupe&&p.use;}).length;
+    var ticked=plan.filter(function(p){return p.use;}).length;
+    h.push('<div class="hint">'+ticked+' of '+plan.length+' ticked \u00b7 '+n+' new \u00b7 '+f+
            ' would gain a URL'+(dupes?' \u00b7 '+dupes+' credits already exist and will be skipped':'')+
            '. Set a credit type per section, or choose skip.</div>');
     out.innerHTML=h.join('');
     Array.prototype.forEach.call(out.querySelectorAll('input[type=checkbox]'),function(b){
-      b.onchange=function(){plan[Number(b.getAttribute('data-i'))].use=b.checked;};});
+      b.onchange=function(){plan[Number(b.getAttribute('data-i'))].use=b.checked;draw();};});
+    Array.prototype.forEach.call(out.querySelectorAll('.secall'),function(b){
+      if(b.getAttribute('data-part'))b.indeterminate=true;
+      b.onchange=function(){
+        var s=b.getAttribute('data-s');
+        plan.forEach(function(p){ if((p.section||'(no section)')===s)p.use=b.checked; });
+        draw();
+      };
+    });
+    Array.prototype.forEach.call(out.querySelectorAll('[data-all]'),function(b){
+      b.onclick=function(){
+        var mode=b.getAttribute('data-all');
+        plan.forEach(function(p){
+          p.use = mode==='1' ? true : mode==='0' ? false : wantedByDefault(p.section);
+        });
+        draw();
+      };
+    });
     Array.prototype.forEach.call(out.querySelectorAll('select.stype'),function(sel){
       sel.onchange=function(){sectionTypes[sel.getAttribute('data-s')]=sel.value;};});
     document.getElementById('bar2').style.display='flex';
