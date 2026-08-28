@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IMDb Paste</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;--mono:ui-monospace,Menlo,Consolas,monospace}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #picker{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px 8px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  #q{flex:1;max-width:340px;padding:6px 11px;border:1px solid var(--line);border-radius:16px;
+    background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #hits{position:absolute;top:42px;left:12px;width:340px;max-height:280px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:hover,#hits div.sel{background:var(--chip)}
+  #hits .yr{color:var(--muted)}
+  #filmname{font-size:12px;color:var(--muted)}
+  #filmname b{color:var(--fg)}
+  #root{padding:12px;max-width:920px}
+  textarea{width:100%;min-height:120px;padding:7px 9px;border:1px solid var(--line);border-radius:5px;
+    background:var(--card);color:var(--fg);font-family:var(--mono);font-size:11px;resize:vertical}
+  textarea:focus{outline:none;border-color:var(--ok)}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;padding:7px 18px}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  #bar{display:flex;gap:9px;align-items:center;margin:9px 0;flex-wrap:wrap}
+  label.opt{display:flex;gap:5px;align-items:center;font-size:12px}
+  label.opt input{width:auto}
+  select{padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:var(--card);
+    color:var(--fg);font:inherit;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11px;font-weight:600}
+  td.u{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .tag{font-size:10px;padding:1px 8px;border-radius:10px;white-space:nowrap}
+  .tag.new{background:var(--ok);color:#fff}
+  .tag.have{background:var(--chip);border:1px solid var(--line);color:var(--muted)}
+  .tag.fill{background:var(--warn);color:#1c1c1c}
+  .hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.6}
+  #status{font-size:12px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  code{background:var(--chip);padding:1px 5px;border-radius:3px;font-size:11px}
+</style>
+</head>
+<body>
+<div id="picker">
+  <input id="q" placeholder="Film to attach credits to (optional)&hellip;" autocomplete="off">
+  <span id="filmname"></span>
+  <div id="hits"></div>
+</div>
+<div id="root">
+  <p class="hint" style="margin-top:0">Paste rows of <code>Name</code> &rarr; tab &rarr;
+    <code>IMDb URL</code>, optionally a third tab-separated column for the character or role.
+    That's exactly what the bookmarklet copies off an IMDb full-credits page.</p>
+  <textarea id="paste" placeholder="Livio Lorenzon&#9;https://www.imdb.com/name/nm0520859&#9;La Spia"></textarea>
+  <div id="bar">
+    <button class="btn" id="analyse">Analyse</button>
+    <label class="opt"><input type="checkbox" id="o_create" checked> create missing people</label>
+    <label class="opt"><input type="checkbox" id="o_url" checked> fill blank IMDb URLs</label>
+    <label class="opt"><input type="checkbox" id="o_credit"> add credits as
+      <select id="o_type">
+        <option>Actor</option><option>Dub voice</option><option>Director</option>
+        <option>Writer</option><option>Cinematographer</option><option>Composer</option>
+        <option>Producer</option><option>Stunt</option><option>Other</option>
+      </select></label>
+  </div>
+  <div id="out"></div>
+  <div id="bar2" style="display:none" class="">
+    <button class="btn go" id="apply">Apply</button>
+    <span id="status"></span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var T={people:'People',credits:'Credits',films:'Films'};
+  var people=[],films=[],film=null,plan=[],hi=-1,suppress=0;
+  var out=document.getElementById('out'),st=document.getElementById('status');
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function norm(s){
+    return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  }
+  function allNames(p){
+    var o=[];[p.Credited_Name,p.Real_Name,p.Aliases].forEach(function(c){
+      String(c||'').split('|').forEach(function(x){x=x.trim();if(x)o.push(x);});});
+    return o;
+  }
+
+  function analyse(){
+    var lines=document.getElementById('paste').value.split('\n')
+      .map(function(l){return l.replace(/\r$/,'');}).filter(function(l){return l.trim();});
+    var idx={};
+    people.forEach(function(p){allNames(p).forEach(function(n){
+      var k=norm(n); if(k&&!(k in idx))idx[k]=p;});});
+
+    plan=[];
+    lines.forEach(function(l){
+      var c=l.split('\t').map(function(x){return x.trim();});
+      var name=c[0], url=c[1]||'', role=c[2]||'';
+      if(!name)return;
+      var hit=idx[norm(name)]||null;
+      plan.push({name:name,url:url,role:role,person:hit,
+                 status: hit ? (hit.IMDb_URL ? 'have' : (url?'fill':'have')) : 'new',
+                 use:true});
+    });
+    draw();
+  }
+
+  function draw(){
+    if(!plan.length){out.innerHTML='<div class="hint">Nothing parsed. Each line needs a name, '+
+      'then a tab, then the URL.</div>';document.getElementById('bar2').style.display='none';return;}
+    var n=plan.filter(function(p){return p.status==='new';}).length,
+        f=plan.filter(function(p){return p.status==='fill';}).length;
+    var h=['<table><tr><th style="width:22px"></th><th>Name</th><th>Status</th>'+
+           '<th>Role</th><th>URL</th></tr>'];
+    plan.forEach(function(p,i){
+      h.push('<tr><td><input type="checkbox" data-i="'+i+'"'+(p.use?' checked':'')+'></td>'+
+        '<td>'+esc(p.name)+(p.person&&norm(p.person.Credited_Name)!==norm(p.name)
+            ? ' <span class="hint">\u2192 '+esc(p.person.Credited_Name)+'</span>':'')+'</td>'+
+        '<td><span class="tag '+p.status+'">'+
+          (p.status==='new'?'new person':p.status==='fill'?'add URL':'already known')+'</span></td>'+
+        '<td>'+esc(p.role)+'</td><td class="u">'+esc(p.url.replace('https://www.imdb.com/name/',''))+
+        '</td></tr>');
+    });
+    h.push('</table><div class="hint">'+plan.length+' rows \u00b7 '+n+' new \u00b7 '+f+
+           ' would gain a URL</div>');
+    out.innerHTML=h.join('');
+    Array.prototype.forEach.call(out.querySelectorAll('input[type=checkbox]'),function(b){
+      b.onchange=function(){plan[Number(b.getAttribute('data-i'))].use=b.checked;};
+    });
+    document.getElementById('bar2').style.display='flex';
+    st.textContent='';
+  }
+
+  document.getElementById('analyse').onclick=analyse;
+
+  document.getElementById('apply').onclick=async function(){
+    var doCreate=document.getElementById('o_create').checked,
+        doUrl=document.getElementById('o_url').checked,
+        doCredit=document.getElementById('o_credit').checked,
+        ctype=document.getElementById('o_type').value;
+    if(doCredit&&!film){st.className='bad';st.textContent='Pick a film first to attach credits.';return;}
+    st.className='';st.textContent='Working\u2026';
+    var made=0,filled=0,credited=0;
+    try{
+      // 1. create missing people, one at a time so we can capture row ids
+      for(var i=0;i<plan.length;i++){
+        var p=plan[i];
+        if(!p.use)continue;
+        if(!p.person&&doCreate){
+          var f={Credited_Name:p.name,Person_Type:['L','Actor'],
+                 Research_Status:'Not started',Confidence:'Confirmed'};
+          if(p.url)f.IMDb_URL=p.url;
+          var r=await grist.docApi.applyUserActions([['AddRecord',T.people,null,f]]);
+          p.newId=r&&r.retValues&&r.retValues[0];
+          made++;
+        } else if(p.person&&doUrl&&p.url&&!p.person.IMDb_URL){
+          await grist.docApi.applyUserActions([['UpdateRecord',T.people,p.person.id,{IMDb_URL:p.url}]]);
+          filled++;
+        }
+      }
+      // 2. credits in one batch
+      if(doCredit){
+        var acts=[];
+        plan.forEach(function(p){
+          if(!p.use)return;
+          var pid=p.person?p.person.id:p.newId;
+          if(!pid)return;
+          var cf={Film:film.id,Person:pid,Credit_Type:['L',ctype],
+                  Identified_From:'Print credits',Confidence:'Confirmed'};
+          if(p.role)cf.Character_Name=p.role;
+          acts.push(['AddRecord',T.credits,null,cf]);
+        });
+        if(acts.length){await grist.docApi.applyUserActions(acts);credited=acts.length;}
+      }
+      people=await get(T.people);
+      st.className='ok';
+      st.textContent=made+' created \u00b7 '+filled+' URLs filled'+
+        (credited?' \u00b7 '+credited+' credits added':'');
+      analyse();
+    }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
+  };
+
+  // ---- film picker ---------------------------------------------------------
+  var q=document.getElementById('q'),hits=document.getElementById('hits');
+  function drawHits(){
+    var s=q.value.trim().toLowerCase(),w=s?s.split(/\s+/):[];
+    var list=films.filter(function(f){
+      if(!w.length)return true;
+      var hay=[f.Original_Title,f.English_Title,f.Year?parseInt(f.Year,10):''].filter(Boolean)
+        .join(' ').toLowerCase();
+      return w.every(function(x){return hay.indexOf(x)>=0;});
+    }).slice(0,50);
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.map(function(f,i){
+      return '<div data-id="'+f.id+'" class="'+(i===hi?'sel':'')+'"><b>'+
+        esc(f.Original_Title||'')+'</b> <span class="yr">'+
+        (f.Year?parseInt(f.Year,10):'')+'</span></div>';}).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=function(e){e.preventDefault();pick(Number(d.getAttribute('data-id')));};});
+  }
+  function pick(id){
+    film=films.filter(function(x){return x.id===id;})[0]||null;
+    hits.style.display='none';q.value='';q.blur();suppress=Date.now();
+    if(film){try{grist.setCursorPos({rowId:id});}catch(e){}}
+    setFilm(film);
+  }
+  function setFilm(f){
+    film=f;
+    document.getElementById('filmname').innerHTML=f
+      ? 'credits go to <b>'+esc(f.Original_Title||'')+'</b>' : '';
+  }
+  q.addEventListener('focus',function(){hi=-1;drawHits();});
+  q.addEventListener('input',function(){hi=-1;drawHits();});
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+  q.addEventListener('keydown',function(e){
+    var rows=hits.children;
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();if(!rows.length)return;
+      hi=e.key==='ArrowDown'?Math.min(hi+1,rows.length-1):Math.max(hi-1,0);
+      Array.prototype.forEach.call(rows,function(r,i){r.classList.toggle('sel',i===hi);});
+    } else if(e.key==='Enter'&&hi>=0&&rows[hi]){pick(Number(rows[hi].getAttribute('data-id')));}
+    else if(e.key==='Escape'){hits.style.display='none';q.blur();}
+  });
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;
+    if(rec&&rec.Original_Title!==undefined)setFilm(rec);
+  });
+  (async function(){
+    people=await get(T.people);
+    films=await get(T.films);
+    films.sort(function(a,b){
+      return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
+  })();
+})();
+</script>
+</body>
+</html>
