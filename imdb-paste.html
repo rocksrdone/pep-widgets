@@ -54,6 +54,7 @@
   .tag.new{background:var(--ok);color:#fff}
   .tag.have{background:var(--chip);border:1px solid var(--line);color:var(--muted)}
   .tag.fill{background:var(--warn);color:#1c1c1c}
+  .tag.dupe{background:var(--bad);color:#fff}
   .hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.6}
   #status{font-size:12px}
   #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
@@ -93,7 +94,7 @@
 (function(){
   "use strict";
   var T={people:'People',credits:'Credits',films:'Films'};
-  var people=[],films=[],film=null,plan=[],sectionTypes={},hi=-1,suppress=0;
+  var people=[],films=[],credits=[],film=null,plan=[],sectionTypes={},hi=-1,suppress=0;
   var out=document.getElementById('out'),st=document.getElementById('status');
 
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -111,6 +112,20 @@
     return o;
   }
 
+  function typeList(v){
+    if(v==null)return [];
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
+    return [String(v)];
+  }
+  function creditExists(personId,type){
+    if(!film||!personId)return false;
+    for(var i=0;i<credits.length;i++){
+      var c=credits[i];
+      if(c.Film!==film.id||c.Person!==personId)continue;
+      if(typeList(c.Credit_Type).indexOf(type)>=0)return true;
+    }
+    return false;
+  }
   function guessType(sec){
     var s=String(sec||'').toLowerCase();
     if(/dub|voice|italian version|french version|doppiat/.test(s))return 'Dub voice';
@@ -171,6 +186,10 @@
     });
     var TYPES=['Actor','Dub voice','Director','Writer','Cinematographer','Composer',
                'Producer','Stunt','Other','\u2014 skip \u2014'];
+    plan.forEach(function(p){
+      var t=sectionTypes[p.section||'(no section)']||'';
+      p.dupe = p.person ? creditExists(p.person.id,t) : false;
+    });
     var h=[];
     var s0=plan[0];
     h.push('<div class="hint" style="margin-top:6px">First row parsed as \u2014 '+
@@ -194,7 +213,8 @@
           (p.person&&norm(p.person.Credited_Name)!==norm(p.name)
             ? ' <span class="hint">\u2192 '+esc(p.person.Credited_Name)+'</span>':'')+'</td>'+
           '<td><span class="tag '+p.status+'">'+
-            (p.status==='new'?'new':p.status==='fill'?'add URL':'known')+'</span></td>'+
+            (p.status==='new'?'new':p.status==='fill'?'add URL':'known')+'</span>'+
+            (p.dupe?' <span class="tag dupe">credit exists</span>':'')+'</td>'+
           '<td>'+esc(p.role)+'</td>'+
           '<td class="u">'+esc(p.url.replace('https://www.imdb.com/name/',''))+'</td></tr>');
       });
@@ -202,8 +222,10 @@
     });
     var n=plan.filter(function(p){return p.status==='new';}).length,
         f=plan.filter(function(p){return p.status==='fill';}).length;
+    var dupes=plan.filter(function(p){return p.dupe;}).length;
     h.push('<div class="hint">'+plan.length+' rows \u00b7 '+n+' new \u00b7 '+f+
-           ' would gain a URL. Set a credit type per section, or choose skip.</div>');
+           ' would gain a URL'+(dupes?' \u00b7 '+dupes+' credits already exist and will be skipped':'')+
+           '. Set a credit type per section, or choose skip.</div>');
     out.innerHTML=h.join('');
     Array.prototype.forEach.call(out.querySelectorAll('input[type=checkbox]'),function(b){
       b.onchange=function(){plan[Number(b.getAttribute('data-i'))].use=b.checked;};});
@@ -227,7 +249,7 @@
         ctype=document.getElementById('o_type').value;
     if(doCredit&&!film){st.className='bad';st.textContent='Pick a film first to attach credits.';return;}
     st.className='';st.textContent='Working\u2026';
-    var made=0,filled=0,credited=0;
+    var made=0,filled=0,credited=0,skipped=0;
     try{
       // 1. create missing people, one at a time so we can capture row ids
       for(var i=0;i<plan.length;i++){
@@ -254,6 +276,8 @@
           if(!pid)return;
           var t=sectionTypes[p.section||'(no section)']||ctype;
           if(t.indexOf('skip')>=0)return;
+          var existingId=p.person?p.person.id:p.newId;
+          if(creditExists(existingId,t)){skipped++;return;}
           var cf={Film:film.id,Person:pid,Credit_Type:['L',t],
                   Identified_From:'Print credits',Confidence:'Confirmed'};
           if(p.role&&t==='Actor')cf.Character_Name=p.role;
@@ -263,10 +287,11 @@
         if(acts.length){await grist.docApi.applyUserActions(acts);credited=acts.length;}
       }
       people=await get(T.people);
+      credits=await get(T.credits);
       st.className='ok';
       st.textContent=made+' created \u00b7 '+filled+' URLs filled \u00b7 '+
-        (doCredit ? credited+' credits added'
-                  : 'no credits added \u2014 tick "add credits as" and pick a film to create them');
+        (doCredit ? credited+' credits added'+(skipped?' \u00b7 '+skipped+' skipped as duplicates':'')
+                  : 'no credits added \u2014 tick "add credits" and pick a film to create them');
       analyse();
     }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
   };
@@ -298,6 +323,7 @@
   }
   function setFilm(f){
     film=f;
+    if(plan.length)draw();
     document.getElementById('filmname').innerHTML=f
       ? 'credits go to <b>'+esc(f.Original_Title||'')+'</b>' : '';
   }
@@ -322,6 +348,7 @@
   (async function(){
     people=await get(T.people);
     films=await get(T.films);
+    credits=await get(T.credits);
     films.sort(function(a,b){
       return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
   })();
