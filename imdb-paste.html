@@ -42,7 +42,11 @@
   label.opt input{width:auto}
   select{padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:var(--card);
     color:var(--fg);font:inherit;font-size:12px}
-  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:2px;margin-bottom:12px}
+  .sec{display:flex;gap:9px;align-items:center;margin-top:14px;padding-bottom:3px;
+    border-bottom:1px solid var(--line)}
+  .secname{font-weight:600;font-size:12px}
+  .sec select{margin-left:auto}
   th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-size:11px;font-weight:600}
   td.u{font-family:var(--mono);font-size:10px;color:var(--muted)}
@@ -71,8 +75,8 @@
     <button class="btn" id="analyse">Analyse</button>
     <label class="opt"><input type="checkbox" id="o_create" checked> create missing people</label>
     <label class="opt"><input type="checkbox" id="o_url" checked> fill blank IMDb URLs</label>
-    <label class="opt hot" id="creditopt"><input type="checkbox" id="o_credit"> add credits as
-      <select id="o_type">
+    <label class="opt hot" id="creditopt"><input type="checkbox" id="o_credit"> add credits (type is set per section below)
+      <select id="o_type" style="display:none">
         <option>Actor</option><option>Dub voice</option><option>Director</option>
         <option>Writer</option><option>Cinematographer</option><option>Composer</option>
         <option>Producer</option><option>Stunt</option><option>Other</option>
@@ -89,7 +93,7 @@
 (function(){
   "use strict";
   var T={people:'People',credits:'Credits',films:'Films'};
-  var people=[],films=[],film=null,plan=[],hi=-1,suppress=0;
+  var people=[],films=[],film=null,plan=[],sectionTypes={},hi=-1,suppress=0;
   var out=document.getElementById('out'),st=document.getElementById('status');
 
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -107,6 +111,19 @@
     return o;
   }
 
+  function guessType(sec){
+    var s=String(sec||'').toLowerCase();
+    if(/dub|voice|italian version|french version|doppiat/.test(s))return 'Dub voice';
+    if(/cast|actor|actress/.test(s))return 'Actor';
+    if(/direct/.test(s)&&!/art direct|assistant direct/.test(s))return 'Director';
+    if(/writ|screenplay|story|scenario/.test(s))return 'Writer';
+    if(/cinematograph|photograph|camera/.test(s))return 'Cinematographer';
+    if(/music|composer|score/.test(s))return 'Composer';
+    if(/produc/.test(s))return 'Producer';
+    if(/stunt/.test(s))return 'Stunt';
+    return 'Other';
+  }
+
   function analyse(){
     var lines=document.getElementById('paste').value.split('\n')
       .map(function(l){return l.replace(/\r$/,'');}).filter(function(l){return l.trim();});
@@ -117,38 +134,74 @@
     plan=[];
     lines.forEach(function(l){
       var c=l.split('\t').map(function(x){return x.trim();});
-      var name=c[0], url=c[1]||'', role=c[2]||'';
+      // find whichever column holds the imdb name URL
+      var ui=-1;
+      for(var i=0;i<c.length;i++){ if(/imdb\.com\/name\/nm/.test(c[i])){ui=i;break;} }
+      var section='',name='',url='',role='';
+      if(ui>=1){
+        url=c[ui]; name=c[ui-1]; section=ui>=2?c[0]:''; role=c[ui+1]||'';
+      } else if(ui===0){
+        url=c[0]; name=c[1]||''; role=c[2]||'';
+      } else {
+        name=c[0]||''; role=c[1]||'';
+      }
       if(!name)return;
       var hit=idx[norm(name)]||null;
-      plan.push({name:name,url:url,role:role,person:hit,
+      plan.push({section:section,name:name,url:url,role:role,person:hit,
                  status: hit ? (hit.IMDb_URL ? 'have' : (url?'fill':'have')) : 'new',
                  use:true});
+    });
+    // one credit-type choice per section, pre-guessed
+    sectionTypes={};
+    plan.forEach(function(p){
+      var s=p.section||'(no section)';
+      if(!(s in sectionTypes))sectionTypes[s]=guessType(s);
     });
     draw();
   }
 
   function draw(){
-    if(!plan.length){out.innerHTML='<div class="hint">Nothing parsed. Each line needs a name, '+
-      'then a tab, then the URL.</div>';document.getElementById('bar2').style.display='none';return;}
+    if(!plan.length){out.innerHTML='<div class="hint">Nothing parsed. Each line needs a name and '+
+      'an IMDb URL separated by tabs.</div>';document.getElementById('bar2').style.display='none';return;}
+    var groups={},order=[];
+    plan.forEach(function(p,i){
+      var s=p.section||'(no section)';
+      if(!groups[s]){groups[s]=[];order.push(s);}
+      groups[s].push(i);
+    });
+    var TYPES=['Actor','Dub voice','Director','Writer','Cinematographer','Composer',
+               'Producer','Stunt','Other','\u2014 skip \u2014'];
+    var h=[];
+    order.forEach(function(s){
+      var ids=groups[s];
+      h.push('<div class="sec"><span class="secname">'+esc(s)+'</span>'+
+        '<span class="hint">'+ids.length+'</span>'+
+        '<select class="stype" data-s="'+esc(s)+'">'+
+        TYPES.map(function(t){return '<option'+(t===sectionTypes[s]?' selected':'')+'>'+t+'</option>';}).join('')+
+        '</select></div>');
+      h.push('<table>');
+      ids.forEach(function(i){
+        var p=plan[i];
+        h.push('<tr><td style="width:22px"><input type="checkbox" data-i="'+i+'"'+
+          (p.use?' checked':'')+'></td><td>'+esc(p.name)+
+          (p.person&&norm(p.person.Credited_Name)!==norm(p.name)
+            ? ' <span class="hint">\u2192 '+esc(p.person.Credited_Name)+'</span>':'')+'</td>'+
+          '<td><span class="tag '+p.status+'">'+
+            (p.status==='new'?'new':p.status==='fill'?'add URL':'known')+'</span></td>'+
+          '<td>'+esc(p.role)+'</td>'+
+          '<td class="u">'+esc(p.url.replace('https://www.imdb.com/name/',''))+'</td></tr>');
+      });
+      h.push('</table>');
+    });
     var n=plan.filter(function(p){return p.status==='new';}).length,
         f=plan.filter(function(p){return p.status==='fill';}).length;
-    var h=['<table><tr><th style="width:22px"></th><th>Name</th><th>Status</th>'+
-           '<th>Role</th><th>URL</th></tr>'];
-    plan.forEach(function(p,i){
-      h.push('<tr><td><input type="checkbox" data-i="'+i+'"'+(p.use?' checked':'')+'></td>'+
-        '<td>'+esc(p.name)+(p.person&&norm(p.person.Credited_Name)!==norm(p.name)
-            ? ' <span class="hint">\u2192 '+esc(p.person.Credited_Name)+'</span>':'')+'</td>'+
-        '<td><span class="tag '+p.status+'">'+
-          (p.status==='new'?'new person':p.status==='fill'?'add URL':'already known')+'</span></td>'+
-        '<td>'+esc(p.role)+'</td><td class="u">'+esc(p.url.replace('https://www.imdb.com/name/',''))+
-        '</td></tr>');
-    });
-    h.push('</table><div class="hint">'+plan.length+' rows \u00b7 '+n+' new \u00b7 '+f+
-           ' would gain a URL</div>');
+    h.push('<div class="hint">'+plan.length+' rows \u00b7 '+n+' new \u00b7 '+f+
+           ' would gain a URL. Set a credit type per section, or choose skip.</div>');
     out.innerHTML=h.join('');
     Array.prototype.forEach.call(out.querySelectorAll('input[type=checkbox]'),function(b){
-      b.onchange=function(){plan[Number(b.getAttribute('data-i'))].use=b.checked;};
-    });
+      b.onchange=function(){plan[Number(b.getAttribute('data-i'))].use=b.checked;};});
+    Array.prototype.forEach.call(out.querySelectorAll('select.stype'),function(sel){
+      sel.onchange=function(){sectionTypes[sel.getAttribute('data-s')]=sel.value;};});
     document.getElementById('bar2').style.display='flex';
     st.textContent='';
   }
@@ -192,9 +245,12 @@
           if(!p.use)return;
           var pid=p.person?p.person.id:p.newId;
           if(!pid)return;
-          var cf={Film:film.id,Person:pid,Credit_Type:['L',ctype],
+          var t=sectionTypes[p.section||'(no section)']||ctype;
+          if(t.indexOf('skip')>=0)return;
+          var cf={Film:film.id,Person:pid,Credit_Type:['L',t],
                   Identified_From:'Print credits',Confidence:'Confirmed'};
-          if(p.role)cf.Character_Name=p.role;
+          if(p.role&&t==='Actor')cf.Character_Name=p.role;
+          else if(p.role)cf.Notes=p.role;
           acts.push(['AddRecord',T.credits,null,cf]);
         });
         if(acts.length){await grist.docApi.applyUserActions(acts);credited=acts.length;}
