@@ -131,6 +131,17 @@
     if(Array.isArray(v)){var a=v[0]==='L'?v.slice(1):v;return a.length?a[0]:null;}return null;}
   async function token(){if(!tok||(Date.now()-tokAt)>60000){tok=await grist.docApi.getAccessToken({readOnly:true});tokAt=Date.now();}return tok;}
   function url(t,id){return t.baseUrl+'/attachments/'+id+'/download?auth='+encodeURIComponent(t.token);}
+  function yr(v){
+    if(v===null||v===undefined||v==='')return '';
+    if(typeof v==='number'){
+      if(v>=1800&&v<=2200)return String(Math.round(v));   // a bare year
+      var d=new Date(v*1000);                              // Grist date = epoch seconds
+      if(!isNaN(d.getTime()))return String(d.getUTCFullYear());
+      return '';
+    }
+    var m=String(v).match(/\d{4}/);
+    return m?m[0]:'';
+  }
   function stars(n){n=Number(n)||0;return '\u2605'.repeat(n)+'<span style="color:var(--line)">'+'\u2605'.repeat(5-n)+'</span>';}
   function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
 
@@ -326,8 +337,7 @@
     var mine=allCredits.filter(function(c){return c.Person===pid;});
     var fById={};(window.__films||[]).forEach(function(f){fById[f.id]=f;});
     var ph=att(p.Photo);
-    var life=[p.Born?String(p.Born).slice(0,4):'',p.Died?String(p.Died).slice(0,4):'']
-      .filter(Boolean).join(' \u2013 ');
+    var life=[yr(p.Born),yr(p.Died)].filter(Boolean).join(' \u2013 ');
     var h=['<div class="pcard"><div class="phead">'];
     h.push(ph&&curTok?'<div class="pph" style="background-image:url(\''+url(curTok,ph)+'\')"></div>'
                      :'<div class="pph empty"></div>');

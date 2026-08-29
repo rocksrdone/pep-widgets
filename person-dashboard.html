@@ -107,7 +107,17 @@
         x=x.trim();if(x&&!seen[x]){seen[x]=1;out.push(x);}});});
     return out;
   }
-  function yr(v){return v?String(v).slice(0,4):'';}
+  function yr(v){
+    if(v===null||v===undefined||v==='')return '';
+    if(typeof v==='number'){
+      if(v>=1800&&v<=2200)return String(Math.round(v));   // a bare year
+      var d=new Date(v*1000);                              // Grist date = epoch seconds
+      if(!isNaN(d.getTime()))return String(d.getUTCFullYear());
+      return '';
+    }
+    var m=String(v).match(/\d{4}/);
+    return m?m[0]:'';
+  }
 
   async function render(p){
     if(!p){show('Search for a person above.');return;}
