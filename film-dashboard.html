@@ -71,6 +71,23 @@
   .checklist div{padding:2px 0}
   .empty-msg{color:var(--muted);font-size:12px}
   #msg{padding:30px;text-align:center;color:var(--muted)}
+  #pbox{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;
+    justify-content:center;z-index:60;padding:24px}
+  .pcard{background:var(--bg);border:1px solid var(--line);border-radius:9px;max-width:620px;
+    width:100%;max-height:86vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.45)}
+  .phead{display:flex;gap:14px;padding:14px;border-bottom:1px solid var(--line);align-items:flex-start}
+  .pph{flex:0 0 auto;width:88px;height:118px;border-radius:6px;border:1px solid var(--line);
+    background:var(--chip) center/cover no-repeat}
+  .pph.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 7px,var(--card) 7px,var(--card) 14px)}
+  .phead h3{margin:0;font-size:17px}
+  .paka{color:var(--muted);font-size:12px;margin-top:2px}
+  .pclose{margin-left:auto;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer}
+  .pbody{padding:14px}
+  .pbody p{margin:0;font-size:13px}
+  .pacts{display:flex;gap:7px;margin-top:14px}
+  .mini{border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:12px;
+    padding:4px 11px;font:inherit;font-size:11px;cursor:pointer;text-decoration:none;display:inline-block}
+  .mini:hover{border-color:var(--muted)}
   #picker{position:sticky;top:0;z-index:20;background:var(--bg);padding:10px 14px 8px;
     border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
   #q{flex:1;max-width:420px;padding:6px 11px;border:1px solid var(--line);border-radius:16px;
@@ -91,13 +108,14 @@
 <div id="picker"><input id="q" placeholder="Search a film by title or year…" autocomplete="off"><span id="count"></span><div id="hits"></div></div>
 <div id="msg">Select a film&hellip;</div>
 <div id="root"></div>
+<div id="pbox"></div>
 <script>
 (function(){
   "use strict";
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',scenes:'Scenes',
          avail:'SceneAvailability',credits:'Credits',people:'People',masters:'Masters',extras:'Extras'};
   var root=document.getElementById('root'),msg=document.getElementById('msg');
-  var filmId=null,tok=null,tokAt=0;
+  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],curTok=null;
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -124,11 +142,13 @@
         aud=d[1],sub=d[2],
         scenes=d[3].filter(function(s){return s.Film===film.id;}),
         avail=d[4],
+        allCredits=d[5],
         credits=d[5].filter(function(c){return c.Film===film.id;}),
-        people=d[6],masters=d[7].filter(function(m){return m.Film===film.id;}),
+        people=(allPeople=d[6]),masters=d[7].filter(function(m){return m.Film===film.id;}),
         extras=d[8].filter(function(e){return e.Film===film.id;});
     var pById={};people.forEach(function(p){pById[p.id]=p;});
     var t=null;try{t=await token();}catch(e){}
+    curTok=t;
     show('');
 
     var owned=rel.filter(function(r){return r.Ownership==='Owned';}).length;
@@ -229,7 +249,7 @@
     }
     function personCard(c){
       var p=pById[c.Person]||{},ph=att(p.Photo);
-      return '<div class="p">'+(ph&&t?'<div class="ph" style="background-image:url(\''+url(t,ph)+'\')"></div>'
+      return '<div class="p" data-pid="'+c.Person+'">'+(ph&&t?'<div class="ph" style="background-image:url(\''+url(t,ph)+'\')"></div>'
                                     :'<div class="ph empty"></div>')+
         '<div class="n">'+esc(p.Credited_Name||'?')+'</div>'+
         '<div class="c">'+esc(c.Character_Name||'')+'</div></div>';
@@ -237,7 +257,7 @@
     function personRow(c){
       var p=pById[c.Person]||{};
       var detail=c.Character_Name||c.Notes||'';
-      return '<div class="crewrow"><span class="cn">'+esc(p.Credited_Name||'?')+'</span>'+
+      return '<div class="crewrow" data-pid="'+c.Person+'"><span class="cn">'+esc(p.Credited_Name||'?')+'</span>'+
         (detail?'<span class="cd">'+esc(detail)+'</span>':'')+
         (c.Uncredited?'<span class="unc">uncredited</span>':'')+'</div>';
     }
@@ -288,6 +308,67 @@
     }
 
     root.innerHTML=h.join('');
+    Array.prototype.forEach.call(root.querySelectorAll('[data-pid]'),function(el){
+      el.style.cursor='pointer';
+      el.onclick=function(){showPerson(Number(el.getAttribute('data-pid')));};
+    });
+  }
+
+  // ---- person detail panel -------------------------------------------------
+  function showPerson(pid){
+    var p=null;
+    for(var i=0;i<allPeople.length;i++){if(allPeople[i].id===pid){p=allPeople[i];break;}}
+    if(!p)return;
+    var names=[],seen={};
+    [p.Credited_Name,p.Real_Name,p.Aliases].forEach(function(c){
+      String(c||'').split('|').forEach(function(x){
+        x=x.trim(); if(x&&!seen[x]){seen[x]=1;names.push(x);}});});
+    var mine=allCredits.filter(function(c){return c.Person===pid;});
+    var fById={};(window.__films||[]).forEach(function(f){fById[f.id]=f;});
+    var ph=att(p.Photo);
+    var life=[p.Born?String(p.Born).slice(0,4):'',p.Died?String(p.Died).slice(0,4):'']
+      .filter(Boolean).join(' \u2013 ');
+    var h=['<div class="pcard"><div class="phead">'];
+    h.push(ph&&curTok?'<div class="pph" style="background-image:url(\''+url(curTok,ph)+'\')"></div>'
+                     :'<div class="pph empty"></div>');
+    h.push('<div><h3>'+esc(p.Credited_Name||'?')+'</h3>');
+    if(names.length>1)h.push('<div class="paka">also '+esc(names.slice(1).join(' \u00b7 '))+'</div>');
+    h.push('<div class="badges" style="margin-top:6px">');
+    if(life)h.push('<span class="badge">'+esc(life)+'</span>');
+    if(p.Nationality)h.push('<span class="badge">'+esc(p.Nationality)+'</span>');
+    if(p.Birthplace)h.push('<span class="badge">'+esc(p.Birthplace)+'</span>');
+    h.push('<span class="badge">'+mine.length+' credit'+(mine.length===1?'':'s')+'</span>');
+    h.push('</div></div><button class="pclose">\u2715</button></div>');
+
+    h.push('<div class="pbody">');
+    h.push(p.Bio?'<p>'+esc(p.Bio).replace(/\n/g,'<br>')+'</p>'
+                :'<p class="empty-msg">No biography written yet.</p>');
+    h.push('<div class="lead" style="margin-top:12px">Filmography</div><div class="crew">');
+    mine.sort(function(a,b){
+      var fa=fById[a.Film]||{},fb=fById[b.Film]||{};return (fa.Year||0)-(fb.Year||0);});
+    mine.forEach(function(c){
+      var f=fById[c.Film]||{};
+      var ty=(Array.isArray(c.Credit_Type)?(c.Credit_Type[0]==='L'?c.Credit_Type.slice(1)
+              :c.Credit_Type).join(', '):(c.Credit_Type||''));
+      h.push('<div class="crewrow"><span class="cn">'+esc(f.Original_Title||'?')+
+        (f.Year?' <span class="cd">('+parseInt(f.Year,10)+')</span>':'')+'</span>'+
+        '<span class="cd">'+esc([c.Character_Name,ty].filter(Boolean).join(' \u00b7 '))+'</span></div>');
+    });
+    h.push('</div>');
+    h.push('<div class="pacts">');
+    h.push('<button class="mini" id="pcopy">Copy name</button>');
+    if(p.IMDb_URL)h.push('<a class="mini" href="'+esc(p.IMDb_URL)+'" target="_blank">Open IMDb</a>');
+    h.push('</div></div>');
+
+    var box=document.getElementById('pbox');
+    box.innerHTML=h.join('');
+    box.style.display='flex';
+    box.querySelector('.pclose').onclick=function(){box.style.display='none';};
+    var cp=box.querySelector('#pcopy');
+    cp.onclick=function(){
+      navigator.clipboard.writeText(p.Credited_Name||'').then(function(){
+        cp.textContent='Copied';setTimeout(function(){cp.textContent='Copy name';},1300);});
+    };
   }
 
   // ---------------------------------------------------------------- picker --
@@ -350,11 +431,20 @@
   async function loadFilms(){
     try{
       films=await get(T.films);
+      window.__films=films;
       films.sort(function(a,b){
         return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
       cnt.textContent=films.length+' films';
     }catch(e){films=[];}
   }
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){var b=document.getElementById('pbox');if(b)b.style.display='none';}
+  });
+  document.addEventListener('click',function(e){
+    var b=document.getElementById('pbox');
+    if(b&&e.target===b)b.style.display='none';
+  });
 
   grist.ready({requiredAccess:'full'});
   grist.onRecord(function(rec){
