@@ -47,6 +47,15 @@
   .p .ph.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 6px,var(--card) 6px,var(--card) 12px)}
   .p .n{font-size:11px;font-weight:600;line-height:1.25}
   .p .c{font-size:10px;color:var(--muted)}
+  .cover{float:right;width:56px;height:78px;margin:0 0 6px 9px;border-radius:3px;
+    border:1px solid var(--line);background:var(--chip) center/cover no-repeat;cursor:zoom-in}
+  .cover:hover{border-color:var(--muted)}
+  .covers{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+  .covers figure{margin:0;max-width:340px}
+  .covers img{display:block;max-width:100%;max-height:66vh;border-radius:4px;
+    border:1px solid var(--line)}
+  .covers figcaption{text-align:center;font-size:11px;color:var(--muted);padding-top:5px}
+  .pcard{max-width:820px}
   .lead{font-size:11px;color:var(--muted);margin:2px 0 6px;font-weight:600}
   details{border-top:1px solid var(--line);padding:6px 0}
   summary{cursor:pointer;font-size:12px;font-weight:600;list-style:none;
@@ -115,7 +124,7 @@
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',scenes:'Scenes',
          avail:'SceneAvailability',credits:'Credits',people:'People',masters:'Masters',extras:'Extras'};
   var root=document.getElementById('root'),msg=document.getElementById('msg');
-  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],curTok=null;
+  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],curTok=null;
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -149,7 +158,7 @@
     if(!film){show('Select a film&hellip;');return;}
     var d=await Promise.all([get(T.rel),get(T.aud),get(T.sub),get(T.scenes),get(T.avail),
                              get(T.credits),get(T.people),get(T.masters),get(T.extras)]);
-    var rel=d[0].filter(function(r){return r.Film===film.id;}),
+    var rel=(allRel=d[0].filter(function(r){return r.Film===film.id;})),
         aud=d[1],sub=d[2],
         scenes=d[3].filter(function(s){return s.Film===film.id;}),
         avail=d[4],
@@ -204,8 +213,13 @@
       rel.forEach(function(r){
         var a=aud.filter(function(x){return x.Release===r.id;}),
             s=sub.filter(function(x){return x.Release===r.id;});
+        var cf=att(r.Cover_Front),cb=att(r.Cover_Back);
         h.push('<div class="rel">');
         if(r.Ownership)h.push('<span class="own '+esc(r.Ownership)+'">'+esc(r.Ownership)+'</span>');
+        if(cf&&t)h.push('<div class="cover" data-rel="'+r.id+'" title="click to see front and back" '+
+          'style="background-image:url(\''+url(t,cf)+'\')"></div>');
+        else if(cb&&t)h.push('<div class="cover" data-rel="'+r.id+'" '+
+          'style="background-image:url(\''+url(t,cb)+'\')"></div>');
         h.push('<div class="t">'+esc(r.Title_On_Release||'(untitled)')+'</div>');
         h.push('<div class="sub">'+esc([r.Format,r.Country,r.Region_Code,r.Video_Standard,
                r.Aspect_Ratio,(r.Runtime_Min?r.Runtime_Min+' min':'')].filter(Boolean).join(' \u00b7 '))+'</div>');
@@ -319,10 +333,34 @@
     }
 
     root.innerHTML=h.join('');
+    Array.prototype.forEach.call(root.querySelectorAll('[data-rel]'),function(el){
+      el.onclick=function(e){e.stopPropagation();showCovers(Number(el.getAttribute('data-rel')));};
+    });
     Array.prototype.forEach.call(root.querySelectorAll('[data-pid]'),function(el){
       el.style.cursor='pointer';
       el.onclick=function(){showPerson(Number(el.getAttribute('data-pid')));};
     });
+  }
+
+  function showCovers(rid){
+    var r=null;
+    for(var i=0;i<allRel.length;i++){if(allRel[i].id===rid){r=allRel[i];break;}}
+    if(!r||!curTok)return;
+    var f=att(r.Cover_Front),b=att(r.Cover_Back),extra=att(r.Disc_Art);
+    var h=['<div class="pcard"><div class="phead"><div><h3>'+esc(r.Title_On_Release||'')+'</h3>'+
+      '<div class="paka">'+esc([r.Format,r.Label&&'',r.Country,r.Region_Code]
+        .filter(Boolean).join(' \u00b7 '))+'</div></div>'+
+      '<button class="pclose">\u2715</button></div><div class="pbody"><div class="covers">'];
+    [[f,'Front'],[b,'Back'],[extra,'Disc']].forEach(function(pair){
+      if(!pair[0])return;
+      h.push('<figure><img src="'+url(curTok,pair[0])+'" alt=""><figcaption>'+pair[1]+'</figcaption></figure>');
+    });
+    if(!f&&!b&&!extra)h.push('<p class="empty-msg">No artwork attached yet.</p>');
+    h.push('</div></div></div>');
+    var box=document.getElementById('pbox');
+    box.innerHTML=h.join('');
+    box.style.display='flex';
+    box.querySelector('.pclose').onclick=function(){box.style.display='none';};
   }
 
   // ---- person detail panel -------------------------------------------------
