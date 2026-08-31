@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aspect Ratio Helper</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #q{flex:1;min-width:160px;max-width:340px;padding:6px 11px;border:1px solid var(--line);
+    border-radius:16px;background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #hits{position:absolute;top:43px;left:12px;width:400px;max-height:280px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:hover{background:var(--chip)}
+  #hits .s{color:var(--muted);font-size:11px}
+  #who{font-size:11px;color:var(--muted)}
+  #who b{color:var(--fg)}
+  #root{padding:12px;max-width:1000px}
+  .cols{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  @media (max-width:880px){.cols{grid-template-columns:1fr}}
+  fieldset{border:1px solid var(--line);border-radius:7px;padding:11px 12px;margin:0 0 12px}
+  legend{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 5px}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+  input,select{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:4px;
+    background:var(--card);color:var(--fg);font:inherit;font-size:12px}
+  input:focus,select:focus{outline:none;border-color:var(--ok)}
+  .row{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:9px}
+  .row:last-child{margin-bottom:0}
+  #drop{border:1px dashed var(--line);border-radius:7px;padding:20px 12px;text-align:center;
+    background:var(--card);color:var(--muted);font-size:12px;cursor:pointer;line-height:1.7}
+  #drop.over{border-color:var(--ok);background:rgba(22,179,120,.1);color:var(--fg)}
+  #preview{margin-top:10px;position:relative;display:none}
+  #preview canvas{width:100%;display:block;border-radius:5px;border:1px solid var(--line)}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+  .verdict{border:1px solid var(--ok);border-radius:8px;padding:13px 14px;background:rgba(22,179,120,.08);
+    margin-bottom:12px}
+  .verdict.warn{border-color:var(--warn);background:rgba(229,168,59,.1)}
+  .verdict .big{font-size:27px;font-weight:600;line-height:1.15}
+  .verdict .sm{font-size:12px;color:var(--muted);margin-top:3px}
+  .kv{display:grid;gap:6px 16px;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+    margin-top:11px}
+  .kv .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .kv .v{font-size:13px;font-weight:600}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    margin:16px 0 7px;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:3px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:10.5px;font-weight:600}
+  tr.hit td{background:rgba(22,179,120,.14);font-weight:600}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+  pre{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:8px 10px;
+    font-family:var(--mono);font-size:11px;overflow-x:auto;margin:6px 0;white-space:pre-wrap;
+    word-break:break-all}
+  .note{font-size:11.5px;color:var(--muted);line-height:1.65;margin-top:8px}
+  .note b{color:var(--fg)}
+  .tag{font-size:10px;padding:1px 8px;border-radius:9px;background:var(--chip);
+    border:1px solid var(--line);color:var(--muted)}
+  .tag.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+  .tag.warn{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  .tag.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  #status{font-size:12px;margin-top:9px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="q" placeholder="Release to apply results to (optional)&hellip;" autocomplete="off">
+  <span id="who"></span>
+  <div id="hits"></div>
+</div>
+<div id="root">
+  <div class="cols">
+    <div>
+      <fieldset><legend>1. The frame you are measuring</legend>
+        <div class="row">
+          <div><label>What is this image?</label><select id="kind">
+            <option value="player">Player screenshot (already scaled)</option>
+            <option value="stored">Raw stored frame (720&times;576 etc)</option>
+          </select></div>
+        </div>
+        <div class="row" id="storedopts" style="display:none">
+          <div><label>Stored size</label><select id="preset">
+            <option value="720x576">PAL 720&times;576</option>
+            <option value="720x480">NTSC 720&times;480</option>
+            <option value="704x576">PAL 704&times;576</option>
+            <option value="704x480">NTSC 704&times;480</option>
+          </select></div>
+          <div><label>Flagged as</label><select id="flag">
+            <option value="4:3">4:3</option><option value="16:9">16:9</option>
+          </select></div>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>2. Measure it</legend>
+        <div id="drop">Drop a screenshot <em>or a video file</em> here, or click to choose<br>
+          <span style="font-size:11px">the black bars are found for you</span></div>
+        <input type="file" id="file" accept="image/*,video/*" style="display:none">
+        <div id="preview"><canvas id="cv"></canvas></div>
+        <div class="row" style="margin-top:10px">
+          <div><label>Black level</label><input id="thr" type="number" value="16" min="1" max="80"></div>
+          <div><label>Bar left (px)</label><input id="bl" type="number" value="0"></div>
+          <div><label>Bar right</label><input id="br" type="number" value="0"></div>
+          <div><label>Bar top</label><input id="bt" type="number" value="0"></div>
+          <div><label>Bar bottom</label><input id="bb" type="number" value="0"></div>
+        </div>
+        <div class="note">Or paste an ffmpeg <code>cropdetect</code> line:</div>
+        <div class="row"><div style="grid-column:1/-1">
+          <input id="cropline" placeholder="crop=672:576:24:0"></div></div>
+      </fieldset>
+    </div>
+
+    <div>
+      <div id="out"></div>
+      <h2>If you would rather measure it properly</h2>
+      <pre id="cmd">ffmpeg -ss 00:10:00 -i "VTS_01_1.VOB" -vf cropdetect=24:2:0 -frames:v 300 -f null -</pre>
+      <button class="btn" id="copycmd">Copy command</button>
+      <div class="note">Run it at two or three points in the film and take the widest result. A dark
+        scene will make cropdetect eat real picture. Paste the <code>crop=</code> line it prints into
+        the box on the left.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var STD=[[1.333,'1.33:1','4:3 / full frame'],[1.375,'1.37:1','Academy'],
+           [1.66,'1.66:1','European widescreen'],[1.778,'1.78:1','16:9'],
+           [1.85,'1.85:1','US widescreen'],[2.00,'2.00:1','Techniscope crop'],
+           [2.20,'2.20:1','70mm'],[2.35,'2.35:1','Scope'],[2.39,'2.39:1','Modern scope'],
+           [2.55,'2.55:1','Early CinemaScope']];
+  var PAR={'720x576':{'4:3':1.0667,'16:9':1.4222},'704x576':{'4:3':1.0909,'16:9':1.4545},
+           '720x480':{'4:3':0.8889,'16:9':1.1852},'704x480':{'4:3':0.9091,'16:9':1.2121}};
+  var D={rel:[],films:[]},cur=null,img=null,suppress=0;
+
+  function $(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+
+  $('kind').onchange=function(){
+    $('storedopts').style.display=this.value==='stored'?'grid':'none';compute();
+  };
+
+  // ---- bar detection --------------------------------------------------------
+  function analyse(image,natW,natH){
+    natW=natW||image.naturalWidth;natH=natH||image.naturalHeight;
+    var c=document.createElement('canvas');
+    var w=Math.min(natW,960);
+    var s=w/natW;
+    c.width=w;c.height=Math.round(natH*s);
+    var x=c.getContext('2d');
+    x.drawImage(image,0,0,c.width,c.height);
+    var d=x.getImageData(0,0,c.width,c.height).data;
+    var W=c.width,H=c.height,thr=Number($('thr').value)||16;
+    function colLum(i){var t=0;for(var y=0;y<H;y++){var p=(y*W+i)*4;t+=(d[p]+d[p+1]+d[p+2])/3;}return t/H;}
+    function rowLum(j){var t=0;for(var i=0;i<W;i++){var p=(j*W+i)*4;t+=(d[p]+d[p+1]+d[p+2])/3;}return t/W;}
+    var L=0;while(L<W&&colLum(L)<thr)L++;
+    var R=W-1;while(R>L&&colLum(R)<thr)R--;
+    var T=0;while(T<H&&rowLum(T)<thr)T++;
+    var B=H-1;while(B>T&&rowLum(B)<thr)B--;
+    // scale the measurements back to the real image size
+    var f=1/s;
+    return {left:Math.round(L*f),right:Math.round((W-1-R)*f),
+            top:Math.round(T*f),bottom:Math.round((H-1-B)*f),
+            w:natW,h:natH,canvas:c,L:L,R:R,T:T,B:B};
+  }
+  function drawPreview(a){
+    var c=$('cv'),x=c.getContext('2d');
+    c.width=a.canvas.width;c.height=a.canvas.height;
+    x.drawImage(a.canvas,0,0);
+    x.strokeStyle='#16b378';x.lineWidth=2;x.setLineDash([7,5]);
+    x.strokeRect(a.L+1,a.T+1,a.R-a.L-1,a.B-a.T-1);
+    $('preview').style.display='block';
+  }
+
+  function loadFile(f){
+    if(/^video\//.test(f.type)||/\.(mp4|m4v|webm|mov)$/i.test(f.name)){loadVideo(f);return;}
+    loadImage(f);
+  }
+  function loadVideo(f){
+    var u=URL.createObjectURL(f);
+    $('preview').innerHTML='<video id="vid" controls preload="metadata" '+
+      'style="width:100%;border-radius:5px;border:1px solid var(--line);background:#000"></video>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">'+
+      '<button class="btn go" id="grab">Measure this frame</button>'+
+      '<span class="note" id="vinfo" style="margin:0"></span></div>'+
+      '<canvas id="cv" style="margin-top:9px"></canvas>';
+    $('preview').style.display='block';
+    var v=$('vid');
+    v.src=u;
+    v.onloadedmetadata=function(){
+      $('vinfo').textContent=v.videoWidth+'\u00d7'+v.videoHeight+' as the browser decodes it';
+      $('kind').value='player';$('storedopts').style.display='none';
+      v.currentTime=Math.min(120,(v.duration||0)/4);
+    };
+    v.onerror=function(){
+      $('preview').innerHTML='<div class="note"><b>The browser cannot decode that file.</b> '+
+        'VOB, MPEG-2 and most MKV files are not supported here \u2014 pull a frame with ffmpeg '+
+        'instead, using the command on the right.</div>';
+    };
+    $('grab').onclick=function(){
+      var c=document.createElement('canvas');
+      c.width=v.videoWidth;c.height=v.videoHeight;
+      c.getContext('2d').drawImage(v,0,0);
+      img={naturalWidth:v.videoWidth,naturalHeight:v.videoHeight};
+      var a=analyse(c,v.videoWidth,v.videoHeight);
+      $('bl').value=a.left;$('br').value=a.right;$('bt').value=a.top;$('bb').value=a.bottom;
+      var cv=$('cv'),x=cv.getContext('2d');
+      cv.width=a.canvas.width;cv.height=a.canvas.height;
+      cv.style.width='100%';cv.style.display='block';
+      cv.style.border='1px solid var(--line)';cv.style.borderRadius='5px';
+      x.drawImage(a.canvas,0,0);
+      x.strokeStyle='#16b378';x.lineWidth=2;x.setLineDash([7,5]);
+      x.strokeRect(a.L+1,a.T+1,a.R-a.L-1,a.B-a.T-1);
+      compute(v.videoWidth,v.videoHeight);
+    };
+  }
+  function loadImage(f){
+    var u=URL.createObjectURL(f),im=new Image();
+    im.onload=function(){
+      img=im;
+      var a=analyse(im);
+      $('bl').value=a.left;$('br').value=a.right;$('bt').value=a.top;$('bb').value=a.bottom;
+      if($('kind').value==='stored'){
+        var k=im.naturalWidth+'x'+im.naturalHeight;
+        if(PAR[k])$('preset').value=k;
+      }
+      drawPreview(a);
+      URL.revokeObjectURL(u);
+      compute(im.naturalWidth,im.naturalHeight);
+    };
+    im.src=u;
+  }
+  $('drop').onclick=function(){$('file').click();};
+  $('file').onchange=function(){if(this.files.length)loadFile(this.files[0]);};
+  ['dragover','dragleave','drop'].forEach(function(ev){
+    $('drop').addEventListener(ev,function(e){
+      e.preventDefault();
+      $('drop').classList.toggle('over',ev==='dragover');
+      if(ev==='drop'&&e.dataTransfer.files.length)loadFile(e.dataTransfer.files[0]);
+    });
+  });
+  $('cropline').addEventListener('input',function(){
+    var m=this.value.match(/crop=(\d+):(\d+):(\d+):(\d+)/);
+    if(!m)return;
+    var cw=+m[1],ch=+m[2],cx=+m[3],cy=+m[4];
+    var k=$('preset').value.split('x');
+    var fw=img?img.naturalWidth:+k[0],fh=img?img.naturalHeight:+k[1];
+    $('bl').value=cx;$('br').value=Math.max(0,fw-cw-cx);
+    $('bt').value=cy;$('bb').value=Math.max(0,fh-ch-cy);
+    compute(fw,fh);
+  });
+  ['bl','br','bt','bb','thr','preset','flag'].forEach(function(id){
+    $(id).addEventListener('input',function(){compute();});
+    $(id).addEventListener('change',function(){compute();});
+  });
+
+  // ---- the maths ------------------------------------------------------------
+  function compute(fw,fh){
+    var kind=$('kind').value;
+    if(!fw||!fh){
+      if(img){fw=img.naturalWidth;fh=img.naturalHeight;}
+      else {var k=$('preset').value.split('x');fw=+k[0];fh=+k[1];}
+    }
+    var bl=+$('bl').value||0,br=+$('br').value||0,bt=+$('bt').value||0,bb=+$('bb').value||0;
+    var aw=fw-bl-br, ah=fh-bt-bb;
+    if(aw<=0||ah<=0){$('out').innerHTML='';return;}
+
+    var par=1, flag=$('flag').value, preset=$('preset').value;
+    if(kind==='stored')par=(PAR[preset]||{})[flag]||1;
+    var ar=aw*par/ah;
+
+    var best=STD[0],bd=1e9;
+    STD.forEach(function(s){var d=Math.abs(ar-s[0]);if(d<bd){bd=d;best=s;}});
+    var close=bd<0.05;
+
+    // how the picture sits in the frame
+    var sides=(bl+br)>fw*0.01, tb=(bt+bb)>fh*0.01;
+    var storage,warn=false,advice='';
+    if(sides&&tb){storage='Windowboxed';warn=true;
+      advice='Bars on all four sides. A 4:3 letterboxed master has been dropped into a wider frame, '+
+             'so you are losing resolution twice over. Worth replacing if anything better exists.';}
+    else if(tb&&flag==='4:3'&&kind==='stored'){storage='Letterboxed into 4:3';warn=true;
+      advice='The classic early-DVD approach: the widescreen image is baked into a 4:3 frame, so '+
+             'only part of the stored lines carry picture. Fine to watch, but an anamorphic '+
+             'release of the same film would hold noticeably more detail.';}
+    else if(tb){storage='Letterboxed in a 16:9 frame';
+      advice='Normal for a film wider than 1.78 on an anamorphic disc. This is correct authoring.';}
+    else if(sides){storage='Pillarboxed';
+      advice='The film is narrower than the frame it sits in. For a 1.66 title inside 16:9 this is '+
+             'expected and costs very little.';}
+    else {storage='Fills the frame';advice='No bars. Either the film matches the frame exactly, or '+
+             'this is an open-matte transfer showing more image than cinemas did.';}
+
+    var used=(aw*ah)/(fw*fh);
+
+    var h=[];
+    h.push('<div class="verdict'+(warn?' warn':'')+'">');
+    h.push('<div class="big">'+(close?esc(best[1]):ar.toFixed(3)+':1')+'</div>');
+    h.push('<div class="sm">'+(close?esc(best[2])+' \u00b7 measured '+ar.toFixed(3)
+      :'no standard ratio is close \u2014 nearest is '+esc(best[1]))+'</div>');
+    h.push('<div class="kv">');
+    h.push('<div><div class="k">Active picture</div><div class="v">'+aw+'\u00d7'+ah+'</div></div>');
+    h.push('<div><div class="k">Bars</div><div class="v">'+
+      (bl||br?bl+'/'+br+' side':'')+(tb?(bl||br?', ':'')+bt+'/'+bb+' top':'')+
+      (!sides&&!tb?'none':'')+'</div></div>');
+    if(kind==='stored')h.push('<div><div class="k">Pixel aspect</div><div class="v">'+
+      par.toFixed(4)+'</div></div>');
+    h.push('<div><div class="k">Frame used</div><div class="v">'+Math.round(used*100)+'%</div></div>');
+    h.push('</div></div>');
+
+    h.push('<div><span class="tag '+(warn?'bad':'ok')+'">'+esc(storage)+'</span></div>');
+    h.push('<div class="note">'+esc(advice)+'</div>');
+
+    h.push('<h2>Nearest standards</h2><table><tr><th>Ratio</th><th>Name</th><th class="n">Off by</th></tr>');
+    STD.slice().sort(function(a,b){return Math.abs(ar-a[0])-Math.abs(ar-b[0]);}).slice(0,4)
+      .forEach(function(s,i){
+        h.push('<tr'+(i===0&&close?' class="hit"':'')+'><td>'+esc(s[1])+'</td><td>'+esc(s[2])+
+          '</td><td class="n">'+Math.abs(ar-s[0]).toFixed(3)+'</td></tr>');
+      });
+    h.push('</table>');
+
+    h.push('<h2>For the Releases row</h2>');
+    h.push('<table><tr><td>Aspect_Ratio</td><td><b>'+(close?esc(best[1]):ar.toFixed(2)+':1')+
+      '</b></td></tr>');
+    if(kind==='stored'){
+      h.push('<tr><td>Anamorphic</td><td><b>'+(flag==='16:9'?'Yes':'No')+'</b></td></tr>');
+      h.push('<tr><td>Resolution</td><td><b>'+esc(preset.replace('x','\u00d7'))+'</b></td></tr>');
+    }
+    h.push('<tr><td>Cropping</td><td><b>'+esc(storage)+
+      (sides||tb?' \u2014 active '+aw+'\u00d7'+ah:'')+'</b></td></tr></table>');
+    h.push('<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="btn" id="copyfields">Copy these values</button>'+
+      (cur?'<button class="btn go" id="apply">Apply to '+esc(cur.Title_On_Release||'release')+
+      '</button>':'')+'</div><div id="status"></div>');
+
+    $('out').innerHTML=h.join('');
+    var payload={Aspect_Ratio:(close?best[1]:ar.toFixed(2)+':1'),
+                 Cropping:storage+((sides||tb)?' - active '+aw+'x'+ah:'')};
+    if(kind==='stored'){payload.Anamorphic=(flag==='16:9');
+                        payload.Resolution=preset;}
+    $('copyfields').onclick=function(){
+      var txt=Object.keys(payload).map(function(k){return k+': '+payload[k];}).join('\n');
+      navigator.clipboard.writeText(txt);
+      this.textContent='Copied';var b=this;setTimeout(function(){b.textContent='Copy these values';},1300);
+    };
+    var ap=$('apply');
+    if(ap)ap.onclick=async function(){
+      var st=$('status');st.className='';st.textContent='Saving\u2026';
+      try{
+        await grist.docApi.applyUserActions([['UpdateRecord','Releases',cur.id,payload]]);
+        D.rel=await get('Releases');
+        st.className='ok';st.textContent='Written to '+(cur.Title_On_Release||'the release')+'.';
+      }catch(e){st.className='bad';st.textContent=String(e&&e.message||e);}
+    };
+  }
+
+  // ---- release picker -------------------------------------------------------
+  var q=$('q'),hits=$('hits');
+  q.addEventListener('input',function(){
+    var s=norm(this.value.trim());
+    if(s.length<2){hits.style.display='none';return;}
+    var list=D.rel.filter(function(r){
+      var f=D.films.filter(function(x){return x.id===r.Film;})[0]||{};
+      return norm([r.Title_On_Release,r.Format,r.Country,f.Original_Title].join(' ')).indexOf(s)>=0;
+    }).slice(0,20);
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.map(function(r){
+      var f=D.films.filter(function(x){return x.id===r.Film;})[0]||{};
+      return '<div data-id="'+r.id+'"><b>'+esc(r.Title_On_Release||'')+'</b><div class="s">'+
+        esc([f.Original_Title,r.Format,r.Country].filter(Boolean).join(' \u00b7 '))+'</div></div>';
+    }).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=function(e){
+        e.preventDefault();
+        cur=D.rel.filter(function(r){return r.id===Number(d.getAttribute('data-id'));})[0]||null;
+        hits.style.display='none';q.value='';
+        $('who').innerHTML=cur?'writing to <b>'+esc(cur.Title_On_Release||'')+'</b>':'';
+        if(cur&&cur.Resolution&&PAR[String(cur.Resolution).replace('\u00d7','x')])
+          $('preset').value=String(cur.Resolution).replace('\u00d7','x');
+        suppress=Date.now();
+        try{grist.setCursorPos({rowId:cur.id});}catch(err){}
+        compute();
+      };
+    });
+  });
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+
+  $('copycmd').onclick=function(){
+    navigator.clipboard.writeText($('cmd').textContent);
+    this.textContent='Copied';var b=this;
+    setTimeout(function(){b.textContent='Copy command';},1300);
+  };
+
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;
+    if(rec&&rec.Title_On_Release!==undefined){
+      cur=rec;
+      $('who').innerHTML='writing to <b>'+esc(rec.Title_On_Release||'')+'</b>';
+      compute();
+    }
+  });
+  (async function(){
+    D.rel=await get('Releases');D.films=await get('Films');
+    compute();
+  })();
+})();
+</script>
+</body>
+</html>
