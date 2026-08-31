@@ -60,8 +60,25 @@
 <div id="root" style="display:none">
   <div class="film">Adding a release of <b id="filmname"></b></div>
 
-  <fieldset><legend>Paste a MediaInfo report or values</legend>
-    <textarea id="mi" placeholder="Paste the whole MediaInfo text report here, or lines like&#10;Aspect_Ratio: 1.66:1&#10;Anamorphic: Yes"></textarea>
+  <fieldset><legend>Make a report with ffprobe</legend>
+    <div class="row">
+      <div style="grid-column:span 2"><label>What are you probing?</label><select id="srctype">
+        <option value="mkv">An MKV or MP4 rip (best - carries languages)</option>
+        <option value="vob">DVD VIDEO_TS folder (raw VOB)</option>
+        <option value="m2ts">Blu-ray BDMV (raw M2TS)</option>
+        <option value="iso">An ISO image</option>
+      </select></div>
+      <div><label>Sample at</label><input id="srcat" value="00:10:00"></div>
+    </div>
+    <pre id="cmdbox"></pre>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" id="copycmd2">Copy command</button>
+      <span class="hint" id="cmdhint" style="margin:0"></span>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Paste the report</legend>
+    <textarea id="mi" placeholder="Paste peplum-report.txt here &mdash; ffprobe JSON, a MediaInfo report, or plain Field: value lines"></textarea>
     <div style="display:flex;gap:8px;align-items:center;margin-top:7px">
       <button class="btn" id="parse">Read it</button>
       <button class="btn" id="clearmi">Clear</button>
@@ -262,9 +279,173 @@
     el.value=val;return 1;
   }
 
+
+  // ---- ffprobe command builder ---------------------------------------------
+  var SRC={
+    mkv:{f:'"Afrodite (1958) Medusa.mkv"',
+         note:'Probe the MKV you made with MakeMKV \u2014 it carries the audio and subtitle '+
+              'languages that raw VOBs do not.'},
+    vob:{f:'"D:\\VIDEO_TS\\VTS_01_1.VOB"',
+         note:'Pick the largest VTS_01_*.VOB. Raw VOBs usually have no language tags, so expect '+
+              'to set those by hand \u2014 or probe an MKV rip instead.'},
+    m2ts:{f:'"D:\\BDMV\\STREAM\\00001.m2ts"',
+          note:'Pick the largest .m2ts in BDMV\\STREAM \u2014 that is normally the feature.'},
+    iso:{f:'"Afrodite.iso"',
+         note:'ffprobe reads some ISOs directly. If it refuses, mount the image and probe the '+
+              'VOB inside.'}
+  };
+  function buildCmd(){
+    var k=document.getElementById('srctype').value,at=document.getElementById('srcat').value.trim()||'00:10:00';
+    var f=SRC[k].f;
+    var c='ffprobe -v error -print_format json -show_format -show_streams -show_chapters '+f+
+          ' > peplum-report.txt\n'+
+          'echo ===CROPDETECT=== >> peplum-report.txt\n'+
+          'ffmpeg -hide_banner -ss '+at+' -i '+f+' -vf cropdetect=24:2:0 -frames:v 300 '+
+          '-f null - 2>> peplum-report.txt';
+    document.getElementById('cmdbox').textContent=c;
+    document.getElementById('cmdhint').textContent=SRC[k].note;
+  }
+  document.getElementById('srctype').onchange=buildCmd;
+  document.getElementById('srcat').oninput=buildCmd;
+  document.getElementById('copycmd2').onclick=function(){
+    navigator.clipboard.writeText(document.getElementById('cmdbox').textContent);
+    var b=this;b.textContent='Copied';setTimeout(function(){b.textContent='Copy command';},1300);
+  };
+  buildCmd();
+
+  // ---- ffprobe JSON + cropdetect --------------------------------------------
+  var LANG={ita:'Italian',it:'Italian',eng:'English',en:'English',fra:'French',fre:'French',
+            fr:'French',spa:'Spanish',es:'Spanish',deu:'German',ger:'German',de:'German',
+            rus:'Russian',ru:'Russian',jpn:'Japanese',ja:'Japanese',por:'Portuguese',pt:'Portuguese'};
+  var SUBFMT={dvd_subtitle:'VobSub',hdmv_pgs_subtitle:'PGS',subrip:'SRT',ass:'ASS',ssa:'ASS',
+              mov_text:'SRT',dvb_subtitle:'VobSub'};
+  var STD=[[1.333,'1.33:1'],[1.375,'1.37:1'],[1.66,'1.66:1'],[1.778,'1.78:1'],[1.85,'1.85:1'],
+           [2.00,'2.00:1'],[2.20,'2.20:1'],[2.35,'2.35:1'],[2.39,'2.39:1']];
+  function ratioOf(str){
+    var m=String(str||'').match(/(\d+)\s*[:\/]\s*(\d+)/);
+    if(!m||!+m[2])return null;
+    return +m[1]/+m[2];
+  }
+  function langName(t){
+    var c=String(t||'').toLowerCase();
+    return LANG[c]||(c?c.charAt(0).toUpperCase()+c.slice(1):'Other');
+  }
+
+  function parseProbe(txt){
+    var n=0,notes=[];
+    var parts=txt.split(/===CROPDETECT===/);
+    var jsonPart=parts[0], cropPart=parts[1]||'';
+    var start=jsonPart.indexOf('{');
+    if(start<0)return null;
+    var data;
+    try{ data=JSON.parse(jsonPart.slice(start)); }catch(e){ return null; }
+
+    var streams=data.streams||[],fmt=data.format||{};
+    var vid=streams.filter(function(s){return s.codec_type==='video';})[0];
+    var auds=streams.filter(function(s){return s.codec_type==='audio';});
+    var subs=streams.filter(function(s){return s.codec_type==='subtitle';});
+
+    if(fmt.format_name)n+=setIf('f_container',String(fmt.format_name).split(',')[0]);
+    if(fmt.size)n+=setIf('f_size',(Number(fmt.size)/1e9).toFixed(2));
+    if(fmt.duration)n+=setIf('f_runtime',Math.round(Number(fmt.duration)/60));
+    if(data.chapters&&data.chapters.length)n+=setIf('f_chapters',data.chapters.length);
+
+    var fps=0,w=0,h=0,sar=1;
+    if(vid){
+      w=+vid.width||0;h=+vid.height||0;
+      if(w&&h)n+=setIf('f_res',w+'x'+h);
+      n+=setIf('f_codec',vid.codec_name?String(vid.codec_name).toUpperCase():'');
+      var fr=String(vid.avg_frame_rate||vid.r_frame_rate||'');
+      var fm=fr.match(/(\d+)\/(\d+)/);
+      if(fm&&+fm[2]){fps=+fm[1]/+fm[2];n+=setIf('f_fps',fps.toFixed(3));}
+      var vbr=Number(vid.bit_rate||fmt.bit_rate||0);
+      if(vbr){n+=setIf('f_vbr',Math.round(vbr/1000));
+              if(fps&&w&&h)n+=setIf('f_bpp',(vbr/(w*h*fps)).toFixed(3));}
+      var fo=String(vid.field_order||'');
+      if(/progressive/i.test(fo))n+=setIf('f_scan','Progressive');
+      else if(/^t/i.test(fo)){n+=setIf('f_scan','Interlaced');n+=setIf('f_field','Top Field First');}
+      else if(/^b/i.test(fo)){n+=setIf('f_scan','Interlaced');n+=setIf('f_field','Bottom Field First');}
+      var dar=ratioOf(vid.display_aspect_ratio);
+      if(dar){
+        document.getElementById('f_ana').checked=Math.abs(dar-16/9)<0.02;n++;
+        notes.push('Flagged '+vid.display_aspect_ratio+'. That is the author\u2019s claim, not a measurement.');
+      }
+      sar=ratioOf(vid.sample_aspect_ratio)||1;
+    }
+
+    // measured aspect from cropdetect
+    var crops=cropPart.match(/crop=\d+:\d+:\d+:\d+/g)||[];
+    if(crops.length&&w&&h){
+      var bw=0,bh=0;
+      crops.forEach(function(c){
+        var m=c.match(/crop=(\d+):(\d+)/);
+        if(+m[1]>bw)bw=+m[1];
+        if(+m[2]>bh)bh=+m[2];
+      });
+      var ar=bw*sar/bh;
+      var best=STD[0],bd=1e9;
+      STD.forEach(function(x){var d=Math.abs(ar-x[0]);if(d<bd){bd=d;best=x;}});
+      n+=setIf('f_ar',bd<0.05?best[1]:ar.toFixed(2)+':1');
+      var sides=(w-bw)>w*0.01, tb=(h-bh)>h*0.01;
+      var store=sides&&tb?'Windowboxed':tb?(Math.abs(sar-1)<0.05?'Letterboxed 4:3':'Anamorphic')
+                :sides?'Pillarboxed in 16:9':'Fills the frame';
+      n+=setIf('f_storage',store);
+      notes.push('Measured '+ar.toFixed(3)+':1 from the picture ('+bw+'\u00d7'+bh+
+                 ' active, pixel aspect '+sar.toFixed(4)+') \u2014 '+store+'.');
+    } else if(crops.length===0&&cropPart){
+      notes.push('No cropdetect lines found \u2014 the second command may not have run.');
+    }
+
+    // tracks
+    document.getElementById('auds').innerHTML='';
+    auds.forEach(function(a){
+      var d=trackRow('aud');
+      document.getElementById('auds').appendChild(d);
+      var nm=langName((a.tags||{}).language);
+      var sel=d.querySelector('.lang'),ok=false;
+      Array.prototype.forEach.call(sel.options,function(o){
+        if(o.text===nm){sel.value=o.value;ok=true;}});
+      if(!ok)sel.value='Other';
+      d.dataset.codec=a.codec_name?String(a.codec_name).toUpperCase():'';
+      d.dataset.channels=a.channels===1?'Mono':a.channels===2?'Stereo':
+                         a.channels?a.channels+' ch':'';
+      if(a.bit_rate)d.dataset.bitrate=Math.round(Number(a.bit_rate)/1000);
+      n++;
+    });
+    document.getElementById('subs').innerHTML='';
+    subs.forEach(function(x){
+      var d=trackRow('sub');
+      document.getElementById('subs').appendChild(d);
+      var nm=langName((x.tags||{}).language);
+      var sel=d.querySelector('.lang'),ok=false;
+      Array.prototype.forEach.call(sel.options,function(o){
+        if(o.text===nm){sel.value=o.value;ok=true;}});
+      if(!ok)sel.value='Other';
+      var f2=SUBFMT[x.codec_name]||'';
+      if(f2){var fs2=d.querySelector('.fmt');
+        Array.prototype.forEach.call(fs2.options,function(o){if(o.text===f2)fs2.value=o.value;});}
+      n++;
+    });
+
+    if(!auds.some(function(a){return (a.tags||{}).language;})&&auds.length)
+      notes.push('No language tags on the audio \u2014 typical of raw VOBs. Set them by hand.');
+
+    return {n:n,notes:notes,auds:auds.length,subs:subs.length};
+  }
+
   function parsePaste(){
     var txt=document.getElementById('mi').value;
     if(!txt.trim()){document.getElementById('mistatus').textContent='Nothing to read.';return;}
+    if(txt.indexOf('"streams"')>=0){
+      var pr=parseProbe(txt);
+      if(pr){
+        document.getElementById('mistatus').innerHTML=
+          pr.n+' fields filled from ffprobe'+(pr.auds?' \u00b7 '+pr.auds+' audio':'')+
+          (pr.subs?' \u00b7 '+pr.subs+' subtitle':'')+
+          (pr.notes.length?'<br>'+pr.notes.map(esc).join('<br>'):'');
+        return;
+      }
+    }
     var n=0,notes=[];
 
     // simple "Field: value" lines from the aspect helper
