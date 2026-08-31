@@ -143,9 +143,13 @@
       return clean(cur.Credited_Name||'person')+' - '+slot.tag+'.'+ext;
     }
     var f=(data.Films||[]).filter(function(x){return x.id===cur.Film;})[0]||{};
-    var bits=[clean(f.Original_Title||'')+(f.Year?' ('+parseInt(f.Year,10)+')':''),
-              clean(cur.Title_On_Release||''),
-              [cur.Format,cur.Country].filter(Boolean).join(' ')];
+    var ft=clean(f.Original_Title||''), rt=clean(cur.Title_On_Release||'');
+    var bits=[ft+(f.Year?' ('+parseInt(f.Year,10)+')':'')];
+    // only repeat the release title when it actually differs from the film title
+    if(rt&&norm(rt)!==norm(ft))bits.push(rt);
+    var lab=(data.Labels||[]).filter(function(x){return x.id===cur.Label;})[0];
+    bits.push([cur.Format,lab&&clean(lab.Name),cur.Country,cur.Region_Code]
+              .filter(Boolean).join(' '));
     return bits.filter(Boolean).join(' - ')+' - '+slot.tag+'.'+ext;
   }
 
@@ -399,6 +403,7 @@
     data.Releases=await get('Releases');
     data.People=await get('People');
     data.Films=await get('Films');
+    data.Labels=await get('Labels');
     cnt.textContent=pool().length+' rows';
   })();
 })();
