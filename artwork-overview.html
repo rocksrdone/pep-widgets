@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Artwork Overview</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #root{padding:14px;max-width:1080px}
+  .stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    margin-bottom:22px}
+  .stat{border:1px solid var(--line);border-radius:8px;padding:11px 13px;background:var(--card)}
+  .stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .stat .v{font-size:26px;font-weight:600;line-height:1.15;margin:3px 0 1px}
+  .stat .v small{font-size:13px;font-weight:400;color:var(--muted)}
+  .stat .p{font-size:11px;color:var(--muted)}
+  .bar{height:5px;border-radius:3px;background:var(--chip);overflow:hidden;margin-top:8px}
+  .bar i{display:block;height:100%;background:var(--ok);transition:width .3s}
+  .bar i.low{background:var(--bad)} .bar i.mid{background:var(--warn)}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    margin:24px 0 4px;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:4px;
+    display:flex;align-items:center;gap:8px}
+  h2 .n{margin-left:auto;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0}
+  .why{font-size:11px;color:var(--muted);margin:6px 0 8px;line-height:1.6}
+  .rows{display:grid;gap:3px}
+  .r{display:flex;gap:10px;align-items:center;padding:5px 8px;border:1px solid var(--line);
+    border-radius:5px;background:var(--card);font-size:12px}
+  .r.click{cursor:pointer}
+  .r.click:hover{border-color:var(--muted);background:var(--chip)}
+  .r .a{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .r .b{color:var(--muted);font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;flex:1}
+  .tag{flex:0 0 auto;font-size:10px;padding:1px 8px;border-radius:9px;background:var(--chip);
+    border:1px solid var(--line);color:var(--muted)}
+  .tag.hot{background:var(--bad);border-color:var(--bad);color:#fff}
+  .tag.warm{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  .tag.good{background:var(--ok);border-color:var(--ok);color:#fff}
+  .done{color:var(--muted);font-size:12px;padding:8px 2px}
+  .more{font-size:11px;color:var(--muted);padding:5px 2px}
+  #msg{padding:36px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="msg">Reading the document&hellip;</div>
+<div id="root" style="display:none"></div>
+
+<script>
+(function(){
+  "use strict";
+  var T={films:'Films',rel:'Releases',people:'People',stills:'Stills',fs:'FrameSets',credits:'Credits'};
+  var D={},root=document.getElementById('root'),msg=document.getElementById('msg');
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function has(v){
+    if(v==null)return false;
+    if(typeof v==='number')return true;
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).length>0;
+    return false;
+  }
+  function yr(f){return f.Year?' ('+parseInt(f.Year,10)+')':'';}
+  function pct(a,b){return b?Math.round(100*a/b):0;}
+  function barClass(p){return p<34?'low':p<80?'mid':'';}
+
+  function stat(k,a,b,unit){
+    var p=pct(a,b);
+    return '<div class="stat"><div class="k">'+esc(k)+'</div>'+
+      '<div class="v">'+a+' <small>/ '+b+'</small></div>'+
+      '<div class="p">'+p+'% '+esc(unit||'')+'</div>'+
+      '<div class="bar"><i class="'+barClass(p)+'" style="width:'+p+'%"></i></div></div>';
+  }
+  function rowsOrDone(list,doneMsg,cap){
+    if(!list.length)return '<div class="done">\u2713 '+doneMsg+'</div>';
+    var shown=list.slice(0,cap||12);
+    return '<div class="rows">'+shown.join('')+'</div>'+
+      (list.length>shown.length?'<div class="more">and '+(list.length-shown.length)+' more</div>':'');
+  }
+
+  function build(){
+    var films=D.films,rels=D.rel,people=D.people,stills=D.stills,fsets=D.fs,credits=D.credits;
+    var fById={};films.forEach(function(f){fById[f.id]=f;});
+    var rById={};rels.forEach(function(r){rById[r.id]=r;});
+
+    // ---- headline numbers ---------------------------------------------------
+    var posterOk=films.filter(function(f){return has(f.Poster);}).length;
+    var frontOk=rels.filter(function(r){return has(r.Cover_Front);}).length;
+    var backOk=rels.filter(function(r){return has(r.Cover_Back);}).length;
+    var creditedIds={};credits.forEach(function(c){creditedIds[c.Person]=1;});
+    var credited=people.filter(function(p){return creditedIds[p.id];});
+    var photoOk=credited.filter(function(p){return has(p.Photo);}).length;
+
+    // frame set completeness
+    var setStat=fsets.map(function(s){
+      var relsOf=rels.filter(function(r){return r.Film===s.Film;});
+      var got=stills.filter(function(st){return st.Frame_Set===s.id&&has(st.Image);}).length;
+      return {set:s,total:relsOf.length,got:got,film:fById[s.Film]||{}};
+    });
+    var setsComplete=setStat.filter(function(x){return x.total&&x.got>=x.total;}).length;
+
+    var h=[];
+    h.push('<div class="stats">');
+    h.push(stat('Film posters',posterOk,films.length,'of films'));
+    h.push(stat('Front covers',frontOk,rels.length,'of releases'));
+    h.push(stat('Back covers',backOk,rels.length,'of releases'));
+    h.push(stat('Portraits',photoOk,credited.length,'of credited people'));
+    h.push(stat('Frame sets filled',setsComplete,fsets.length,'fully captured'));
+    h.push('</div>');
+
+    // ---- 1. owned discs with no cover --------------------------------------
+    var ownedNoCover=rels.filter(function(r){
+      return r.Ownership==='Owned'&&!has(r.Cover_Front);});
+    h.push('<h2>Discs you own with no front cover<span class="n">'+ownedNoCover.length+'</span></h2>');
+    h.push('<div class="why">These are in your hands \u2014 the sleeve is one photograph away, '+
+           'and the back prints runtime, audio and aspect ratio you can check against your notes.</div>');
+    h.push(rowsOrDone(ownedNoCover.map(function(r){
+      var f=fById[r.Film]||{};
+      return '<div class="r"><span class="a">'+esc(r.Title_On_Release||'')+'</span>'+
+        '<span class="b">'+esc([f.Original_Title,r.Format,r.Label?'':'',r.Country,r.Region_Code]
+          .filter(Boolean).join(' \u00b7 '))+'</span>'+
+        (has(r.Cover_Back)?'<span class="tag warm">back only</span>':'<span class="tag hot">none</span>')+
+        '</div>';}),'Every disc you own has a front cover.'));
+
+    // ---- 2. frame sets part-captured ---------------------------------------
+    var partial=setStat.filter(function(x){return x.total&&x.got<x.total;})
+      .sort(function(a,b){return (b.got/b.total)-(a.got/a.total);});
+    h.push('<h2>Frame sets still short<span class="n">'+partial.length+'</span></h2>');
+    h.push('<div class="why">A comparison only means something once every release has the same '+
+           'frame. Nearly-finished sets are listed first.</div>');
+    h.push(rowsOrDone(partial.map(function(x){
+      var p=pct(x.got,x.total);
+      return '<div class="r click" data-film="'+x.set.Film+'"><span class="a">'+
+        esc(x.film.Original_Title||'')+esc(yr(x.film))+'</span>'+
+        '<span class="b">'+esc(x.set.Label||'')+'</span>'+
+        '<span class="tag '+(p===0?'hot':p<60?'warm':'good')+'">'+x.got+' of '+x.total+'</span></div>';
+    }),'Every frame set is complete.'));
+
+    // ---- 3. films with releases but no frame set at all ---------------------
+    var noSet=films.filter(function(f){
+      var n=rels.filter(function(r){return r.Film===f.id;}).length;
+      return n>1&&!fsets.some(function(s){return s.Film===f.id;});
+    });
+    h.push('<h2>Films with several releases and no frame set<span class="n">'+noSet.length+'</span></h2>');
+    h.push('<div class="why">More than one release logged, so a comparison is possible, but no '+
+           'reference frame has been defined yet.</div>');
+    h.push(rowsOrDone(noSet.map(function(f){
+      var n=rels.filter(function(r){return r.Film===f.id;}).length;
+      return '<div class="r click" data-film="'+f.id+'"><span class="a">'+
+        esc(f.Original_Title||'')+esc(yr(f))+'</span>'+
+        '<span class="b">'+esc(f.Master_Status||'')+'</span>'+
+        '<span class="tag warm">'+n+' releases</span></div>';
+    }),'Every multi-release film has a frame set.'));
+
+    // ---- 4. posters -------------------------------------------------------
+    var noPoster=films.filter(function(f){return !has(f.Poster);})
+      .sort(function(a,b){return String(a.Priority||'9').localeCompare(String(b.Priority||'9'));});
+    h.push('<h2>Films with no poster<span class="n">'+noPoster.length+'</span></h2>');
+    h.push('<div class="why">Sorted by priority, so whatever you are working on next comes first.</div>');
+    h.push(rowsOrDone(noPoster.map(function(f){
+      return '<div class="r click" data-film="'+f.id+'"><span class="a">'+
+        esc(f.Original_Title||'')+esc(yr(f))+'</span>'+
+        '<span class="b">'+esc([f.English_Title,f.Branch].filter(Boolean).join(' \u00b7 '))+'</span>'+
+        (f.Priority?'<span class="tag">'+esc(f.Priority)+'</span>':'')+'</div>';
+    }),'Every film has a poster.'));
+
+    // ---- 5. portraits, busiest people first --------------------------------
+    var count={};credits.forEach(function(c){count[c.Person]=(count[c.Person]||0)+1;});
+    var noPhoto=credited.filter(function(p){return !has(p.Photo);})
+      .sort(function(a,b){return (count[b.id]||0)-(count[a.id]||0);});
+    h.push('<h2>Credited people with no portrait<span class="n">'+noPhoto.length+'</span></h2>');
+    h.push('<div class="why">Most-credited first \u2014 the faces you will meet again across the '+
+           'collection are worth having.</div>');
+    h.push(rowsOrDone(noPhoto.map(function(p){
+      var n=count[p.id]||0;
+      return '<div class="r"><span class="a">'+esc(p.Credited_Name||'')+'</span>'+
+        '<span class="b">'+esc([p.Real_Name,p.Nationality].filter(Boolean).join(' \u00b7 '))+'</span>'+
+        '<span class="tag '+(n>2?'warm':'')+'">'+n+' credit'+(n===1?'':'s')+'</span></div>';
+    }),'Every credited person has a portrait.',15));
+
+    root.innerHTML=h.join('');
+    Array.prototype.forEach.call(root.querySelectorAll('[data-film]'),function(el){
+      el.onclick=function(){
+        var id=Number(el.getAttribute('data-film'));
+        try{grist.setCursorPos({rowId:id});}catch(e){}
+        try{grist.setSelectedRows([id]);}catch(e){}
+      };
+    });
+    msg.style.display='none';root.style.display='block';
+  }
+
+  async function load(){
+    D.films=await get(T.films);
+    D.rel=await get(T.rel);
+    D.people=await get(T.people);
+    D.stills=await get(T.stills);
+    D.fs=await get(T.fs);
+    D.credits=await get(T.credits);
+    build();
+  }
+
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
+  grist.onRecords(function(){ load(); });
+  load();
+})();
+</script>
+</body>
+</html>
