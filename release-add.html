@@ -70,6 +70,12 @@
       </select></div>
       <div><label>Sample at</label><input id="srcat" value="00:10:00"></div>
     </div>
+    <div class="row">
+      <div style="grid-column:span 2"><label>Full path to the file</label>
+        <input id="srcfile" placeholder="D:\Rips\Afrodite\VIDEO_TS\VTS_01_1.VOB"></div>
+      <div style="grid-column:span 2"><label>Where ffmpeg lives (blank if it is on your PATH)</label>
+        <input id="ffdir" placeholder="C:\ffmpeg\bin"></div>
+    </div>
     <pre id="cmdbox"></pre>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" id="copycmd2">Copy command</button>
@@ -294,24 +300,56 @@
          note:'ffprobe reads some ISOs directly. If it refuses, mount the image and probe the '+
               'VOB inside.'}
   };
+  function qq(p){return /[\s&()]/.test(p)?'"'+p+'"':p;}
+  function dirOf(p){
+    var i=Math.max(p.lastIndexOf('\\'),p.lastIndexOf('/'));
+    return i>0?p.slice(0,i):'';
+  }
+  function join(dir,name){
+    if(!dir)return name;
+    var sep=dir.indexOf('\\')>=0?'\\':'/';
+    return dir.replace(/[\\/]+$/,'')+sep+name;
+  }
   function buildCmd(){
-    var k=document.getElementById('srctype').value,at=document.getElementById('srcat').value.trim()||'00:10:00';
-    var f=SRC[k].f;
-    var c='ffprobe -v error -print_format json -show_format -show_streams -show_chapters '+f+
-          ' > peplum-report.txt\n'+
-          'echo ===CROPDETECT=== >> peplum-report.txt\n'+
-          'ffmpeg -hide_banner -ss '+at+' -i '+f+' -vf cropdetect=24:2:0 -frames:v 300 '+
-          '-f null - 2>> peplum-report.txt';
+    var k=document.getElementById('srctype').value;
+    var at=document.getElementById('srcat').value.trim()||'00:10:00';
+    var file=document.getElementById('srcfile').value.trim();
+    var ff=document.getElementById('ffdir').value.trim();
+    var f=file?qq(file):SRC[k].f;
+    var probe=ff?qq(join(ff,'ffprobe')):'ffprobe';
+    var mpeg =ff?qq(join(ff,'ffmpeg')):'ffmpeg';
+    var out=file?qq(join(dirOf(file),'peplum-report.txt')):'peplum-report.txt';
+    var c=probe+' -v error -print_format json -show_format -show_streams -show_chapters '+f+
+          ' > '+out+'\n'+
+          'echo ===CROPDETECT=== >> '+out+'\n'+
+          mpeg+' -hide_banner -ss '+at+' -i '+f+' -vf cropdetect=24:2:0 -frames:v 300 '+
+          '-f null - 2>> '+out;
     document.getElementById('cmdbox').textContent=c;
-    document.getElementById('cmdhint').textContent=SRC[k].note;
+    var hint=SRC[k].note;
+    if(!file)hint+=' Run it from the folder holding the file, or paste the full path above.';
+    else hint+=' The report lands next to the file, in '+(dirOf(file)||'that folder')+'.';
+    document.getElementById('cmdhint').textContent=hint;
+    try{
+      if(grist.widgetApi&&grist.widgetApi.setOption)grist.widgetApi.setOption('ffdir',ff);
+    }catch(e){}
   }
   document.getElementById('srctype').onchange=buildCmd;
   document.getElementById('srcat').oninput=buildCmd;
+  document.getElementById('srcfile').oninput=buildCmd;
+  document.getElementById('ffdir').oninput=buildCmd;
   document.getElementById('copycmd2').onclick=function(){
     navigator.clipboard.writeText(document.getElementById('cmdbox').textContent);
     var b=this;b.textContent='Copied';setTimeout(function(){b.textContent='Copy command';},1300);
   };
-  buildCmd();
+  (async function(){
+    try{
+      if(grist.widgetApi&&grist.widgetApi.getOption){
+        var saved=await grist.widgetApi.getOption('ffdir');
+        if(saved)document.getElementById('ffdir').value=saved;
+      }
+    }catch(e){}
+    buildCmd();
+  })();
 
   // ---- ffprobe JSON + cropdetect --------------------------------------------
   var LANG={ita:'Italian',it:'Italian',eng:'English',en:'English',fra:'French',fre:'French',
