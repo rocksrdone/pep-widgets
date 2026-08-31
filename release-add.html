@@ -60,6 +60,15 @@
 <div id="root" style="display:none">
   <div class="film">Adding a release of <b id="filmname"></b></div>
 
+  <fieldset><legend>Paste a MediaInfo report or values</legend>
+    <textarea id="mi" placeholder="Paste the whole MediaInfo text report here, or lines like&#10;Aspect_Ratio: 1.66:1&#10;Anamorphic: Yes"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:7px">
+      <button class="btn" id="parse">Read it</button>
+      <button class="btn" id="clearmi">Clear</button>
+      <span id="mistatus" class="hint" style="margin:0"></span>
+    </div>
+  </fieldset>
+
   <fieldset><legend>The disc</legend>
     <div class="row">
       <div style="grid-column:span 2"><label>Title on the release</label><input id="f_title" placeholder="Les amours d'Hercule"></div>
@@ -75,10 +84,25 @@
     <div class="row">
       <div><label>Video standard</label><select id="f_std"></select></div>
       <div><label>Aspect ratio</label><input id="f_ar" placeholder="2.35:1"></div>
+      <div><label>Resolution</label><input id="f_res" placeholder="720x576"></div>
       <div><label>Cut status</label><select id="f_cut"></select></div>
       <div><label>Video quality</label><select id="f_qual">
         <option value="">—</option><option>1</option><option>2</option><option>3</option>
         <option>4</option><option>5</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Video codec</label><input id="f_codec" placeholder="MPEG-2"></div>
+      <div><label>Video bitrate (kb/s)</label><input id="f_vbr" type="number" min="0"></div>
+      <div><label>Frame rate</label><input id="f_fps" placeholder="25.000"></div>
+      <div><label>Scan type</label><select id="f_scan"></select></div>
+      <div><label>Field order</label><select id="f_field"></select></div>
+    </div>
+    <div class="row">
+      <div><label>Container</label><input id="f_container" placeholder="MPEG-PS"></div>
+      <div><label>File size (GB)</label><input id="f_size" type="number" step="0.01" min="0"></div>
+      <div><label>Bits / pixel&middot;frame</label><input id="f_bpp" type="number" step="0.001" min="0"></div>
+      <div><label>Chapters</label><input id="f_chapters" type="number" min="0"></div>
+      <div><label>How it is stored</label><select id="f_storage"></select></div>
     </div>
     <div class="cbx">
       <label><input type="checkbox" id="f_ana"> Anamorphic</label>
@@ -130,7 +154,11 @@
     audType:['Original','Dub','Fandub','Commentary','Isolated score'],
     subType:['Full','SDH','Forced','Songs only','Fan'],
     subFmt:['VobSub','PGS','SRT','ASS','Burned-in','CC'],
-    lang:['Italian','English','French','Spanish','German','Russian','Japanese','Portuguese','Other']
+    lang:['Italian','English','French','Spanish','German','Russian','Japanese','Portuguese','Other'],
+    scan:['Progressive','Interlaced','Mixed','Unknown'],
+    field:['n/a','Top Field First','Bottom Field First'],
+    storage:['Anamorphic','Letterboxed 4:3','Open matte 4:3','Pillarboxed in 16:9',
+             'Windowboxed','Fills the frame','Unknown']
   };
   var T={rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',labels:'Labels'};
 
@@ -143,12 +171,17 @@
     for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
   function fill(el,list,blank){el.innerHTML=(blank?'<option value="">—</option>':'')+
     list.map(function(v){return '<option>'+v+'</option>';}).join('');}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function v(id){var e=document.getElementById(id);return e.type==='checkbox'?e.checked:e.value.trim();}
 
   fill(document.getElementById('f_format'),OPT.format);
   fill(document.getElementById('f_std'),OPT.std,true);
   fill(document.getElementById('f_cut'),OPT.cut,true);
   fill(document.getElementById('f_own'),OPT.own);
+  fill(document.getElementById('f_scan'),OPT.scan,true);
+  fill(document.getElementById('f_field'),OPT.field,true);
+  fill(document.getElementById('f_storage'),OPT.storage,true);
 
   function trackRow(kind){
     var d=document.createElement('div');d.className='tk';
@@ -174,7 +207,8 @@
   document.getElementById('addsub').onclick=function(){document.getElementById('subs').appendChild(trackRow('sub'));};
 
   function clearForm(){
-    ['f_title','f_country','f_region','f_cat','f_runtime','f_ar','f_loc','f_price','f_url','f_notes']
+    ['f_title','f_country','f_region','f_cat','f_runtime','f_ar','f_loc','f_price','f_url','f_notes',
+     'f_codec','f_vbr','f_fps','f_container','f_size','f_bpp','f_chapters','f_res']
       .forEach(function(id){document.getElementById(id).value='';});
     ['f_ana','f_ripped','f_untouched'].forEach(function(id){document.getElementById(id).checked=false;});
     document.getElementById('f_qual').value='';
@@ -182,6 +216,172 @@
     document.getElementById('subs').innerHTML='';
   }
   document.getElementById('clear').onclick=function(){clearForm();st.textContent='';};
+
+
+  // ---- MediaInfo / key:value parsing ----------------------------------------
+  function numOf(v){
+    var m=String(v||'').replace(/\u00a0|\u202f/g,' ').match(/-?[\d ]+(?:[.,]\d+)?/);
+    if(!m)return null;
+    var n=parseFloat(m[0].replace(/ /g,'').replace(',','.'));
+    return isNaN(n)?null:n;
+  }
+  function splitBlocks(txt){
+    var lines=txt.replace(/\r/g,'').split('\n');
+    var blocks=[],cur=null;
+    lines.forEach(function(l){
+      var t=l.trim();
+      if(!t){return;}
+      if(t.indexOf(':')<0&&t.length<40&&/^[A-Za-z][A-Za-z0-9 #\-\/]*$/.test(t)){
+        cur={name:t,kv:{}};blocks.push(cur);return;
+      }
+      if(!cur){cur={name:'General',kv:{}};blocks.push(cur);}
+      var i=t.indexOf(':');
+      if(i<0)return;
+      var k=t.slice(0,i).trim(), val=t.slice(i+1).trim();
+      if(k&&val&&!(k in cur.kv))cur.kv[k]=val;
+    });
+    return blocks;
+  }
+  function pick(kv){
+    for(var i=1;i<arguments.length;i++){
+      var want=arguments[i].toLowerCase();
+      for(var k in kv)if(k.toLowerCase()===want)return kv[k];
+    }
+    return '';
+  }
+  function setIf(id,val){
+    if(val===''||val==null)return 0;
+    var el=document.getElementById(id);
+    if(!el)return 0;
+    if(el.tagName==='SELECT'){
+      var found=false;
+      Array.prototype.forEach.call(el.options,function(o){
+        if(o.text.toLowerCase()===String(val).toLowerCase()){el.value=o.value;found=true;}});
+      return found?1:0;
+    }
+    el.value=val;return 1;
+  }
+
+  function parsePaste(){
+    var txt=document.getElementById('mi').value;
+    if(!txt.trim()){document.getElementById('mistatus').textContent='Nothing to read.';return;}
+    var n=0,notes=[];
+
+    // simple "Field: value" lines from the aspect helper
+    var simple={Aspect_Ratio:'f_ar',Anamorphic:null,Resolution:'f_res',Cropping:null,
+                Storage_Type:'f_storage'};
+    var didSimple=false;
+    txt.split('\n').forEach(function(l){
+      var m=l.match(/^\s*([A-Za-z_]+)\s*:\s*(.+?)\s*$/);
+      if(!m)return;
+      var k=m[1],val=m[2];
+      if(!(k in simple))return;
+      didSimple=true;
+      if(k==='Anamorphic'){document.getElementById('f_ana').checked=/^(yes|true|1)$/i.test(val);n++;}
+      else if(k==='Cropping'){
+        var cur=document.getElementById('f_notes').value;
+        document.getElementById('f_notes').value=(cur?cur+'\n':'')+val;n++;
+      }
+      else if(simple[k]){n+=setIf(simple[k],val.replace(/\u00d7/g,'x'));}
+    });
+
+    var blocks=splitBlocks(txt);
+    var vid=null,gen=null,auds=[],subs=[];
+    blocks.forEach(function(b){
+      var nm=b.name.toLowerCase();
+      if(/^general/.test(nm))gen=gen||b;
+      else if(/^video/.test(nm))vid=vid||b;
+      else if(/^audio/.test(nm))auds.push(b);
+      else if(/^text/.test(nm))subs.push(b);
+    });
+
+    if(gen){
+      n+=setIf('f_container',pick(gen.kv,'Format'));
+      var fs=numOf(pick(gen.kv,'File size'));
+      if(fs!==null){
+        var unit=/GiB|GB/i.test(pick(gen.kv,'File size'))?1:(/MiB|MB/i.test(pick(gen.kv,'File size'))?0.001:1);
+        n+=setIf('f_size',(fs*unit).toFixed(2));
+      }
+      var dur=pick(gen.kv,'Duration');
+      if(dur){
+        var hh=dur.match(/(\d+)\s*h/), mm=dur.match(/(\d+)\s*min/);
+        var mins=(hh?+hh[1]*60:0)+(mm?+mm[1]:0);
+        if(mins)n+=setIf('f_runtime',mins);
+      }
+    }
+    if(vid){
+      var w=numOf(pick(vid.kv,'Width')), hgt=numOf(pick(vid.kv,'Height'));
+      if(w&&hgt)n+=setIf('f_res',w+'x'+hgt);
+      n+=setIf('f_codec',pick(vid.kv,'Format','Codec ID'));
+      var br=numOf(pick(vid.kv,'Bit rate','Nominal bit rate'));
+      if(br)n+=setIf('f_vbr',Math.round(br));
+      var fps=numOf(pick(vid.kv,'Frame rate'));
+      if(fps)n+=setIf('f_fps',fps.toFixed(3));
+      n+=setIf('f_scan',pick(vid.kv,'Scan type'));
+      var so=pick(vid.kv,'Scan order');
+      if(/top/i.test(so))n+=setIf('f_field','Top Field First');
+      else if(/bottom/i.test(so))n+=setIf('f_field','Bottom Field First');
+      var bpp=numOf(pick(vid.kv,'Bits/(Pixel*Frame)'));
+      if(bpp!==null)n+=setIf('f_bpp',bpp);
+      var dar=pick(vid.kv,'Display aspect ratio');
+      if(dar){
+        document.getElementById('f_ana').checked=/16[:\/]9/.test(dar);
+        if(!document.getElementById('f_ar').value)setIf('f_ar',dar);
+        notes.push('MediaInfo reports the display flag as '+dar+
+                   ' \u2014 measure a frame before trusting it.');
+        n++;
+      }
+      if(/interlac/i.test(pick(vid.kv,'Scan type')))
+        notes.push('Flagged interlaced. PAL film DVDs usually hold progressive frames anyway '+
+                   '\u2014 check for combing before reaching for QTGMC.');
+    }
+    if(/mpeg-?ps|vob/i.test(pick((gen||{kv:{}}).kv,'Format'))&&!document.getElementById('f_format').value)
+      setIf('f_format','DVD');
+
+    // tracks
+    document.getElementById('auds').innerHTML='';
+    auds.forEach(function(b){
+      var d=trackRow('aud');
+      document.getElementById('auds').appendChild(d);
+      var lang=pick(b.kv,'Language')||'Other';
+      var sel=d.querySelector('.lang'),ok=false;
+      Array.prototype.forEach.call(sel.options,function(o){
+        if(o.text.toLowerCase()===lang.toLowerCase()){sel.value=o.value;ok=true;}});
+      if(!ok)sel.value='Other';
+      var ch=numOf(pick(b.kv,'Channel(s)'));
+      d.dataset.codec=pick(b.kv,'Format');
+      d.dataset.channels=ch===1?'Mono':ch===2?'Stereo':ch?ch+'.0':'';
+      d.dataset.bitrate=numOf(pick(b.kv,'Bit rate'))||'';
+      n++;
+    });
+    document.getElementById('subs').innerHTML='';
+    subs.forEach(function(b){
+      var d=trackRow('sub');
+      document.getElementById('subs').appendChild(d);
+      var lang=pick(b.kv,'Language')||'Other';
+      var sel=d.querySelector('.lang'),ok=false;
+      Array.prototype.forEach.call(sel.options,function(o){
+        if(o.text.toLowerCase()===lang.toLowerCase()){sel.value=o.value;ok=true;}});
+      if(!ok)sel.value='Other';
+      var fmt=pick(b.kv,'Format');
+      var fs2=d.querySelector('.fmt');
+      Array.prototype.forEach.call(fs2.options,function(o){
+        if(/rle/i.test(fmt)&&o.text==='VobSub')fs2.value=o.value;
+        else if(o.text.toLowerCase()===String(fmt).toLowerCase())fs2.value=o.value;});
+      n++;
+    });
+
+    var st=document.getElementById('mistatus');
+    st.innerHTML=n+' field'+(n===1?'':'s')+' filled'+
+      (auds.length?' \u00b7 '+auds.length+' audio':'')+
+      (subs.length?' \u00b7 '+subs.length+' subtitle':'')+
+      (notes.length?'<br>'+notes.map(esc).join('<br>'):'');
+  }
+  document.getElementById('parse').onclick=parsePaste;
+  document.getElementById('clearmi').onclick=function(){
+    document.getElementById('mi').value='';
+    document.getElementById('mistatus').textContent='';
+  };
 
   document.getElementById('save').onclick=async function(){
     if(!film){st.className='bad';st.textContent='No film selected.';return;}
@@ -194,8 +394,15 @@
       Video_Standard:v('f_std'), Aspect_Ratio:v('f_ar'), Anamorphic:v('f_ana'),
       Cut_Status:v('f_cut'), Ownership:v('f_own'), Physical_Location:v('f_loc'),
       Purchase_Source:'', Store_URL:v('f_url'), Ripped:v('f_ripped'),
-      Untouched_Rip:v('f_untouched'), Print_Notes:v('f_notes')
+      Untouched_Rip:v('f_untouched'), Print_Notes:v('f_notes'),
+      Video_Codec:v('f_codec'), Frame_Rate:v('f_fps'), Scan_Type:v('f_scan'),
+      Field_Order:v('f_field'), Container:v('f_container'), Storage_Type:v('f_storage'),
+      Resolution:v('f_res')
     };
+    if(v('f_vbr'))fields.Video_Bitrate=Number(v('f_vbr'));
+    if(v('f_size'))fields.File_Size_GB=Number(v('f_size'));
+    if(v('f_bpp'))fields.Bits_Per_Pixel=Number(v('f_bpp'));
+    if(v('f_chapters'))fields.Chapters=Number(v('f_chapters'));
     if(v('f_runtime'))fields.Runtime_Min=Number(v('f_runtime'));
     if(v('f_qual'))fields.Video_Quality=Number(v('f_qual'));
     if(v('f_price'))fields.Purchase_Price=Number(v('f_price'))||0;
@@ -208,10 +415,14 @@
       if(!rid)throw new Error('No row id returned');
       var acts=[];
       Array.prototype.forEach.call(document.querySelectorAll('#auds .tk'),function(d){
-        acts.push(['AddRecord',T.aud,null,{Release:rid,
+        var af={Release:rid,
           Language:d.querySelector('.lang').value,
           Track_Type:d.querySelector('.type').value,
-          Use_In_Master:d.querySelector('.use').checked}]);
+          Use_In_Master:d.querySelector('.use').checked};
+        if(d.dataset.codec)af.Codec=d.dataset.codec;
+        if(d.dataset.channels)af.Channels=d.dataset.channels;
+        if(d.dataset.bitrate)af.Bitrate=Number(d.dataset.bitrate);
+        acts.push(['AddRecord',T.aud,null,af]);
       });
       Array.prototype.forEach.call(document.querySelectorAll('#subs .tk'),function(d){
         acts.push(['AddRecord',T.sub,null,{Release:rid,
@@ -276,6 +487,7 @@
     if(!f)return;
     hits.style.display='none';q.value='';q.blur();hi=-1;suppress=Date.now();
     try{grist.setCursorPos({rowId:id});}catch(e){}
+    try{grist.setSelectedRows([id]);}catch(e){}
     setFilm(f);
   }
   q.addEventListener('focus',function(){hi=-1;drawHits();});
@@ -301,7 +513,7 @@
       cnt.textContent=films.length+' films';
     }catch(e){films=[];}
   }
-  grist.ready({requiredAccess:'full'});
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
   grist.onRecord(function(rec){
     if(Date.now()-suppress<1200)return;
     if(rec)setFilm(rec);
