@@ -37,6 +37,7 @@
   .opts label{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
   select{padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:var(--bg);
     color:var(--fg);font:inherit;font-size:12px}
+  .linked{font-size:11px;color:var(--muted);margin-bottom:9px}
   .slots{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
   .slot{border:1px dashed var(--line);border-radius:7px;padding:10px;background:var(--card);
     text-align:center;transition:border-color .12s,background .12s}
@@ -96,7 +97,8 @@
              {col:'Insert',     label:'Insert / booklet',tag:'insert',multi:true}],
     person:[{col:'Photo',label:'Portrait',tag:'portrait'}]
   };
-  var mode='release',cur=null,data={},tok=null,tokAt=0,wtok=null,wtokAt=0,hi=-1,suppress=0;
+  var LOCK=(location.search.match(/[?&]mode=(person|release)/)||[])[1]||null;
+  var mode=LOCK||'release',cur=null,data={},tok=null,tokAt=0,wtok=null,wtokAt=0,hi=-1,suppress=0;
   var root=document.getElementById('root'),msg=document.getElementById('msg'),
       q=document.getElementById('q'),hits=document.getElementById('hits'),
       cnt=document.getElementById('count');
@@ -324,6 +326,8 @@
       '<span style="font-size:11px;color:var(--muted)">Keep originals on the NAS \u2014 '+
       'these copies live inside the Grist document.</span></div>');
 
+    h.push('<div class="linked">The grid beside this widget is now on this row \u2014 '+
+           'drop the prepared file straight into its cell.</div>');
     h.push('<div class="slots">');
     SLOTS[mode].forEach(function(s,i){
       var ids=attArr(cur[s.col]);
@@ -411,8 +415,15 @@
     else if(e.key==='Escape'){hits.style.display='none';q.blur();}
   });
 
+  if(LOCK){
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){
+      if(b.getAttribute('data-m')===LOCK){b.classList.add('on');b.disabled=true;b.style.cursor='default';}
+      else b.style.display='none';
+    });
+  }
   Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){
     b.onclick=function(){
+      if(LOCK)return;
       mode=b.getAttribute('data-m');
       Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(x){
         x.classList.toggle('on',x===b);});
@@ -436,6 +447,9 @@
     data.Films=await get('Films');
     data.Labels=await get('Labels');
     cnt.textContent=pool().length+' rows';
+    q.placeholder='Search a '+(mode==='person'?'person':'release')+'\u2026';
+    msg.textContent='Search for a '+(mode==='person'?'person':'release')+
+      ' to attach images to.';
   })();
 })();
 </script>
