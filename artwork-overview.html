@@ -7,48 +7,74 @@
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
   :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
-    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;
-    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b}
   @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
     --chip:#2c2c2c;--card:#262626}}
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--fg);
     font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  #root{padding:14px;max-width:1080px}
-  .stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-    margin-bottom:22px}
-  .stat{border:1px solid var(--line);border-radius:8px;padding:11px 13px;background:var(--card)}
-  .stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-  .stat .v{font-size:26px;font-weight:600;line-height:1.15;margin:3px 0 1px}
-  .stat .v small{font-size:13px;font-weight:400;color:var(--muted)}
-  .stat .p{font-size:11px;color:var(--muted)}
-  .bar{height:5px;border-radius:3px;background:var(--chip);overflow:hidden;margin-top:8px}
-  .bar i{display:block;height:100%;background:var(--ok);transition:width .3s}
+  #bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px 8px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:var(--chip);color:var(--muted);border-radius:13px;
+    padding:4px 13px;font:inherit;font-size:12px;cursor:pointer}
+  .tab.on{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+  #q{flex:1;min-width:150px;max-width:320px;padding:6px 11px;border:1px solid var(--line);
+    border-radius:16px;background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  .mini{border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:12px;
+    padding:4px 10px;font:inherit;font-size:11px;cursor:pointer}
+  .mini.on{background:var(--warn);border-color:var(--warn);color:#1c1c1c;font-weight:600}
+  #count{font-size:11px;color:var(--muted);margin-left:auto}
+  #root{padding:12px}
+  .stats{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{border:1px solid var(--line);border-radius:7px;padding:7px 11px;background:var(--card);
+    min-width:132px}
+  .stat .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stat .v{font-size:18px;font-weight:600;line-height:1.2}
+  .stat .v small{font-size:11px;font-weight:400;color:var(--muted)}
+  .bar{height:4px;border-radius:2px;background:var(--chip);overflow:hidden;margin-top:5px}
+  .bar i{display:block;height:100%;background:var(--ok)}
   .bar i.low{background:var(--bad)} .bar i.mid{background:var(--warn)}
-  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
-    margin:24px 0 4px;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:4px;
-    display:flex;align-items:center;gap:8px}
-  h2 .n{margin-left:auto;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0}
-  .why{font-size:11px;color:var(--muted);margin:6px 0 8px;line-height:1.6}
-  .rows{display:grid;gap:3px}
-  .r{display:flex;gap:10px;align-items:center;padding:5px 8px;border:1px solid var(--line);
-    border-radius:5px;background:var(--card);font-size:12px}
-  .r.click{cursor:pointer}
-  .r.click:hover{border-color:var(--muted);background:var(--chip)}
-  .r .a{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .r .b{color:var(--muted);font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;
-    white-space:nowrap;flex:1}
-  .tag{flex:0 0 auto;font-size:10px;padding:1px 8px;border-radius:9px;background:var(--chip);
-    border:1px solid var(--line);color:var(--muted)}
-  .tag.hot{background:var(--bad);border-color:var(--bad);color:#fff}
-  .tag.warm{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
-  .tag.good{background:var(--ok);border-color:var(--ok);color:#fff}
-  .done{color:var(--muted);font-size:12px;padding:8px 2px}
-  .more{font-size:11px;color:var(--muted);padding:5px 2px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);color:var(--muted);
+    font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;user-select:none;
+    position:sticky;top:0;background:var(--bg);z-index:5}
+  th:hover{color:var(--fg)}
+  th.num{text-align:right}
+  th .ar{opacity:.55;font-size:9px}
+  td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr.main{cursor:pointer}
+  tr.main:hover td,tr.main.open td{background:var(--chip)}
+  .ttl{font-weight:600}
+  .sub{color:var(--muted);font-size:11px}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .chk{font-weight:700}
+  .chk.y{color:var(--ok)} .chk.n{color:var(--bad)}
+  .frac{display:inline-flex;gap:6px;align-items:center;justify-content:flex-end}
+  .mbar{width:44px;height:4px;border-radius:2px;background:var(--chip);overflow:hidden}
+  .mbar i{display:block;height:100%;background:var(--ok)}
+  .mbar i.low{background:var(--bad)} .mbar i.mid{background:var(--warn)}
+  .pill{font-size:10px;padding:1px 7px;border-radius:9px;background:var(--chip);
+    border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  tr.detail td{background:var(--card);padding:9px 14px 12px 26px}
+  .dgrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .dh{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+    margin-bottom:4px;font-weight:600}
+  .dl{display:flex;gap:7px;align-items:center;padding:2px 0;font-size:11.5px}
+  .dl .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dl .s{font-size:10px;color:var(--muted)}
+  .empty{color:var(--muted);font-size:11px;padding:2px 0}
   #msg{padding:36px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
+<div id="bar">
+  <button class="tab on" data-v="film">By film</button>
+  <button class="tab" data-v="person">By person</button>
+  <input id="q" placeholder="Filter films&hellip;" autocomplete="off">
+  <button class="mini" id="gaps">Needs work only</button>
+  <span id="count"></span>
+</div>
 <div id="msg">Reading the document&hellip;</div>
 <div id="root" style="display:none"></div>
 
@@ -56,7 +82,9 @@
 (function(){
   "use strict";
   var T={films:'Films',rel:'Releases',people:'People',stills:'Stills',fs:'FrameSets',credits:'Credits'};
-  var D={},root=document.getElementById('root'),msg=document.getElementById('msg');
+  var D={},view='film',gapsOnly=false,sortKey='title',sortDir=1,open={};
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      q=document.getElementById('q'),cnt=document.getElementById('count');
 
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -69,147 +97,243 @@
     if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).length>0;
     return false;
   }
-  function yr(f){return f.Year?' ('+parseInt(f.Year,10)+')':'';}
-  function pct(a,b){return b?Math.round(100*a/b):0;}
-  function barClass(p){return p<34?'low':p<80?'mid':'';}
-
-  function stat(k,a,b,unit){
+  function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  function yr(f){return f.Year?parseInt(f.Year,10):'';}
+  function pct(a,b){return b?Math.round(100*a/b):100;}
+  function cls(p){return p<34?'low':p<80?'mid':'';}
+  function frac(a,b){
+    if(!b)return '<span class="sub">\u2014</span>';
     var p=pct(a,b);
-    return '<div class="stat"><div class="k">'+esc(k)+'</div>'+
-      '<div class="v">'+a+' <small>/ '+b+'</small></div>'+
-      '<div class="p">'+p+'% '+esc(unit||'')+'</div>'+
-      '<div class="bar"><i class="'+barClass(p)+'" style="width:'+p+'%"></i></div></div>';
+    return '<span class="frac">'+a+'/'+b+'<span class="mbar"><i class="'+cls(p)+
+      '" style="width:'+p+'%"></i></span></span>';
   }
-  function rowsOrDone(list,doneMsg,cap){
-    if(!list.length)return '<div class="done">\u2713 '+doneMsg+'</div>';
-    var shown=list.slice(0,cap||12);
-    return '<div class="rows">'+shown.join('')+'</div>'+
-      (list.length>shown.length?'<div class="more">and '+(list.length-shown.length)+' more</div>':'');
+  function chk(v){return v?'<span class="chk y">\u2713</span>':'<span class="chk n">\u2715</span>';}
+
+  function filmRows(){
+    var byFilm={};
+    D.rel.forEach(function(r){(byFilm[r.Film]=byFilm[r.Film]||[]).push(r);});
+    var credByFilm={};
+    D.credits.forEach(function(c){(credByFilm[c.Film]=credByFilm[c.Film]||[]).push(c);});
+    var pById={};D.people.forEach(function(p){pById[p.id]=p;});
+    return D.films.map(function(f){
+      var rels=byFilm[f.id]||[];
+      var front=rels.filter(function(r){return has(r.Cover_Front);}).length;
+      var back=rels.filter(function(r){return has(r.Cover_Back);}).length;
+      var cs=credByFilm[f.id]||[],seen={},cast=[];
+      cs.forEach(function(c){if(!seen[c.Person]){seen[c.Person]=1;cast.push(c);}});
+      var withPhoto=cast.filter(function(c){var p=pById[c.Person];return p&&has(p.Photo);}).length;
+      var sets=D.fs.filter(function(s){return s.Film===f.id;}).length;
+      var gaps=(has(f.Poster)?0:1)+(rels.length-front)+(cast.length-withPhoto);
+      return {id:f.id,f:f,rels:rels,front:front,back:back,cast:cast,pById:pById,
+              withPhoto:withPhoto,sets:sets,gaps:gaps,
+              title:norm(f.Original_Title),year:yr(f)||0,poster:has(f.Poster)?1:0,
+              frontPct:pct(front,rels.length),backPct:pct(back,rels.length),
+              castPct:pct(withPhoto,cast.length),
+              prio:String(f.Priority||'~'),master:String(f.Master_Status||'~')};
+    });
+  }
+
+  function personRows(){
+    var fById={};D.films.forEach(function(f){fById[f.id]=f;});
+    var byPerson={};
+    D.credits.forEach(function(c){(byPerson[c.Person]=byPerson[c.Person]||[]).push(c);});
+    var shotsBy={};
+    D.stills.forEach(function(s){
+      if(!s.Person||!has(s.Image))return;
+      var k=s.Person+'|'+s.Film;
+      shotsBy[k]=(shotsBy[k]||0)+1;
+    });
+    return D.people.filter(function(p){return byPerson[p.id];}).map(function(p){
+      var cs=byPerson[p.id]||[],films={},list=[];
+      cs.forEach(function(c){
+        if(films[c.Film])return;
+        films[c.Film]=1;
+        list.push({f:fById[c.Film]||{},c:c,shots:shotsBy[p.id+'|'+c.Film]||0});
+      });
+      var shots=list.reduce(function(a,x){return a+x.shots;},0);
+      return {id:p.id,p:p,films:list,shots:shots,photo:has(p.Photo)?1:0,
+              credits:cs.length,nfilms:list.length,title:norm(p.Credited_Name),
+              nat:norm(p.Nationality),gaps:has(p.Photo)?0:1};
+    });
+  }
+
+  var COLS={
+    film:[{k:'title',t:'Film'},{k:'year',t:'Year',n:1},{k:'poster',t:'Poster',n:1},
+          {k:'nrels',t:'Releases',n:1},{k:'frontPct',t:'Front covers',n:1},
+          {k:'backPct',t:'Back covers',n:1},{k:'castPct',t:'Cast portraits',n:1},
+          {k:'prio',t:'Priority'},{k:'master',t:'Master'}],
+    person:[{k:'title',t:'Person'},{k:'photo',t:'Portrait',n:1},{k:'credits',t:'Credits',n:1},
+            {k:'nfilms',t:'Films',n:1},{k:'shots',t:'Stills',n:1},{k:'nat',t:'Nationality'}]
+  };
+  function sortVal(r,k){
+    if(k==='nrels')return r.rels.length;
+    return r[k]!==undefined?r[k]:'';
   }
 
   function build(){
-    var films=D.films,rels=D.rel,people=D.people,stills=D.stills,fsets=D.fs,credits=D.credits;
-    var fById={};films.forEach(function(f){fById[f.id]=f;});
-    var rById={};rels.forEach(function(r){rById[r.id]=r;});
-
-    // ---- headline numbers ---------------------------------------------------
-    var posterOk=films.filter(function(f){return has(f.Poster);}).length;
-    var frontOk=rels.filter(function(r){return has(r.Cover_Front);}).length;
-    var backOk=rels.filter(function(r){return has(r.Cover_Back);}).length;
-    var creditedIds={};credits.forEach(function(c){creditedIds[c.Person]=1;});
-    var credited=people.filter(function(p){return creditedIds[p.id];});
-    var photoOk=credited.filter(function(p){return has(p.Photo);}).length;
-
-    // frame set completeness
-    var setStat=fsets.map(function(s){
-      var relsOf=rels.filter(function(r){return r.Film===s.Film;});
-      var got=stills.filter(function(st){return st.Frame_Set===s.id&&has(st.Image);}).length;
-      return {set:s,total:relsOf.length,got:got,film:fById[s.Film]||{}};
+    var rows=view==='film'?filmRows():personRows();
+    var s=norm(q.value.trim()),w=s?s.split(/\s+/):[];
+    rows=rows.filter(function(r){
+      if(gapsOnly&&!r.gaps)return false;
+      if(!w.length)return true;
+      var hay=view==='film'
+        ? norm([r.f.Original_Title,r.f.English_Title,r.f.Alt_Titles,r.f.Director,yr(r.f)].join(' '))
+        : norm([r.p.Credited_Name,r.p.Real_Name,r.p.Aliases,r.p.Nationality].join(' '));
+      return w.every(function(x){return hay.indexOf(x)>=0;});
     });
-    var setsComplete=setStat.filter(function(x){return x.total&&x.got>=x.total;}).length;
-
-    var h=[];
-    h.push('<div class="stats">');
-    h.push(stat('Film posters',posterOk,films.length,'of films'));
-    h.push(stat('Front covers',frontOk,rels.length,'of releases'));
-    h.push(stat('Back covers',backOk,rels.length,'of releases'));
-    h.push(stat('Portraits',photoOk,credited.length,'of credited people'));
-    h.push(stat('Frame sets filled',setsComplete,fsets.length,'fully captured'));
-    h.push('</div>');
-
-    // ---- 1. owned discs with no cover --------------------------------------
-    var ownedNoCover=rels.filter(function(r){
-      return r.Ownership==='Owned'&&!has(r.Cover_Front);});
-    h.push('<h2>Discs you own with no front cover<span class="n">'+ownedNoCover.length+'</span></h2>');
-    h.push('<div class="why">These are in your hands \u2014 the sleeve is one photograph away, '+
-           'and the back prints runtime, audio and aspect ratio you can check against your notes.</div>');
-    h.push(rowsOrDone(ownedNoCover.map(function(r){
-      var f=fById[r.Film]||{};
-      return '<div class="r"><span class="a">'+esc(r.Title_On_Release||'')+'</span>'+
-        '<span class="b">'+esc([f.Original_Title,r.Format,r.Label?'':'',r.Country,r.Region_Code]
-          .filter(Boolean).join(' \u00b7 '))+'</span>'+
-        (has(r.Cover_Back)?'<span class="tag warm">back only</span>':'<span class="tag hot">none</span>')+
-        '</div>';}),'Every disc you own has a front cover.'));
-
-    // ---- 2. frame sets part-captured ---------------------------------------
-    var partial=setStat.filter(function(x){return x.total&&x.got<x.total;})
-      .sort(function(a,b){return (b.got/b.total)-(a.got/a.total);});
-    h.push('<h2>Frame sets still short<span class="n">'+partial.length+'</span></h2>');
-    h.push('<div class="why">A comparison only means something once every release has the same '+
-           'frame. Nearly-finished sets are listed first.</div>');
-    h.push(rowsOrDone(partial.map(function(x){
-      var p=pct(x.got,x.total);
-      return '<div class="r click" data-film="'+x.set.Film+'"><span class="a">'+
-        esc(x.film.Original_Title||'')+esc(yr(x.film))+'</span>'+
-        '<span class="b">'+esc(x.set.Label||'')+'</span>'+
-        '<span class="tag '+(p===0?'hot':p<60?'warm':'good')+'">'+x.got+' of '+x.total+'</span></div>';
-    }),'Every frame set is complete.'));
-
-    // ---- 3. films with releases but no frame set at all ---------------------
-    var noSet=films.filter(function(f){
-      var n=rels.filter(function(r){return r.Film===f.id;}).length;
-      return n>1&&!fsets.some(function(s){return s.Film===f.id;});
+    rows.sort(function(a,b){
+      var x=sortVal(a,sortKey),y=sortVal(b,sortKey);
+      if(typeof x==='string'||typeof y==='string')
+        return String(x).localeCompare(String(y))*sortDir;
+      return (x-y)*sortDir;
     });
-    h.push('<h2>Films with several releases and no frame set<span class="n">'+noSet.length+'</span></h2>');
-    h.push('<div class="why">More than one release logged, so a comparison is possible, but no '+
-           'reference frame has been defined yet.</div>');
-    h.push(rowsOrDone(noSet.map(function(f){
-      var n=rels.filter(function(r){return r.Film===f.id;}).length;
-      return '<div class="r click" data-film="'+f.id+'"><span class="a">'+
-        esc(f.Original_Title||'')+esc(yr(f))+'</span>'+
-        '<span class="b">'+esc(f.Master_Status||'')+'</span>'+
-        '<span class="tag warm">'+n+' releases</span></div>';
-    }),'Every multi-release film has a frame set.'));
+    cnt.textContent=rows.length+(gapsOnly?' needing work':' rows');
 
-    // ---- 4. posters -------------------------------------------------------
-    var noPoster=films.filter(function(f){return !has(f.Poster);})
-      .sort(function(a,b){return String(a.Priority||'9').localeCompare(String(b.Priority||'9'));});
-    h.push('<h2>Films with no poster<span class="n">'+noPoster.length+'</span></h2>');
-    h.push('<div class="why">Sorted by priority, so whatever you are working on next comes first.</div>');
-    h.push(rowsOrDone(noPoster.map(function(f){
-      return '<div class="r click" data-film="'+f.id+'"><span class="a">'+
-        esc(f.Original_Title||'')+esc(yr(f))+'</span>'+
-        '<span class="b">'+esc([f.English_Title,f.Branch].filter(Boolean).join(' \u00b7 '))+'</span>'+
-        (f.Priority?'<span class="tag">'+esc(f.Priority)+'</span>':'')+'</div>';
-    }),'Every film has a poster.'));
-
-    // ---- 5. portraits, busiest people first --------------------------------
-    var count={};credits.forEach(function(c){count[c.Person]=(count[c.Person]||0)+1;});
-    var noPhoto=credited.filter(function(p){return !has(p.Photo);})
-      .sort(function(a,b){return (count[b.id]||0)-(count[a.id]||0);});
-    h.push('<h2>Credited people with no portrait<span class="n">'+noPhoto.length+'</span></h2>');
-    h.push('<div class="why">Most-credited first \u2014 the faces you will meet again across the '+
-           'collection are worth having.</div>');
-    h.push(rowsOrDone(noPhoto.map(function(p){
-      var n=count[p.id]||0;
-      return '<div class="r"><span class="a">'+esc(p.Credited_Name||'')+'</span>'+
-        '<span class="b">'+esc([p.Real_Name,p.Nationality].filter(Boolean).join(' \u00b7 '))+'</span>'+
-        '<span class="tag '+(n>2?'warm':'')+'">'+n+' credit'+(n===1?'':'s')+'</span></div>';
-    }),'Every credited person has a portrait.',15));
-
+    var h=[statsStrip(),'<table><thead><tr>'];
+    COLS[view].forEach(function(c){
+      h.push('<th data-k="'+c.k+'"'+(c.n?' class="num"':'')+'>'+esc(c.t)+
+        (sortKey===c.k?' <span class="ar">'+(sortDir>0?'\u25b2':'\u25bc')+'</span>':'')+'</th>');
+    });
+    h.push('</tr></thead><tbody>');
+    rows.forEach(function(r){h.push(view==='film'?filmRow(r):personRow(r));});
+    h.push('</tbody></table>');
+    if(!rows.length)h.push('<div class="empty" style="padding:18px">Nothing matches.</div>');
     root.innerHTML=h.join('');
-    Array.prototype.forEach.call(root.querySelectorAll('[data-film]'),function(el){
-      el.onclick=function(){
-        var id=Number(el.getAttribute('data-film'));
-        try{grist.setCursorPos({rowId:id});}catch(e){}
-        try{grist.setSelectedRows([id]);}catch(e){}
-      };
-    });
+    bind();
     msg.style.display='none';root.style.display='block';
   }
 
-  async function load(){
-    D.films=await get(T.films);
-    D.rel=await get(T.rel);
-    D.people=await get(T.people);
-    D.stills=await get(T.stills);
-    D.fs=await get(T.fs);
-    D.credits=await get(T.credits);
-    build();
+  function statsStrip(){
+    var posterOk=D.films.filter(function(f){return has(f.Poster);}).length;
+    var frontOk=D.rel.filter(function(r){return has(r.Cover_Front);}).length;
+    var backOk=D.rel.filter(function(r){return has(r.Cover_Back);}).length;
+    var credited={};D.credits.forEach(function(c){credited[c.Person]=1;});
+    var cp=D.people.filter(function(p){return credited[p.id];});
+    var photoOk=cp.filter(function(p){return has(p.Photo);}).length;
+    function one(k,a,b){
+      var p=pct(a,b);
+      return '<div class="stat"><div class="k">'+k+'</div><div class="v">'+a+
+        ' <small>/ '+b+'</small></div><div class="bar"><i class="'+cls(p)+
+        '" style="width:'+p+'%"></i></div></div>';
+    }
+    return '<div class="stats">'+one('Posters',posterOk,D.films.length)+
+      one('Front covers',frontOk,D.rel.length)+one('Back covers',backOk,D.rel.length)+
+      one('Portraits',photoOk,cp.length)+'</div>';
   }
 
+  function filmRow(r){
+    var h=['<tr class="main'+(open['f'+r.id]?' open':'')+'" data-open="f'+r.id+
+           '" data-film="'+r.id+'">'];
+    h.push('<td><span class="ttl">'+esc(r.f.Original_Title||'')+'</span>'+
+      (r.f.English_Title&&r.f.English_Title!==r.f.Original_Title
+        ?'<div class="sub">'+esc(r.f.English_Title)+'</div>':'')+'</td>');
+    h.push('<td class="num">'+(yr(r.f)||'')+'</td>');
+    h.push('<td class="num">'+chk(r.poster)+'</td>');
+    h.push('<td class="num">'+r.rels.length+'</td>');
+    h.push('<td class="num">'+frac(r.front,r.rels.length)+'</td>');
+    h.push('<td class="num">'+frac(r.back,r.rels.length)+'</td>');
+    h.push('<td class="num">'+frac(r.withPhoto,r.cast.length)+'</td>');
+    h.push('<td>'+(r.f.Priority?'<span class="pill">'+esc(r.f.Priority)+'</span>':'')+'</td>');
+    h.push('<td><span class="sub">'+esc(r.f.Master_Status||'')+'</span></td></tr>');
+    if(open['f'+r.id]){
+      h.push('<tr class="detail"><td colspan="9"><div class="dgrid">');
+      h.push('<div><div class="dh">Releases</div>');
+      if(!r.rels.length)h.push('<div class="empty">None logged.</div>');
+      r.rels.forEach(function(x){
+        h.push('<div class="dl"><span class="g">'+esc(x.Title_On_Release||'')+
+          '<span class="s"> \u00b7 '+esc([x.Format,x.Country].filter(Boolean).join(' '))+
+          '</span></span><span class="s">front</span>'+chk(has(x.Cover_Front))+
+          '<span class="s">back</span>'+chk(has(x.Cover_Back))+'</div>');
+      });
+      h.push('</div><div><div class="dh">Portraits for this cast</div>');
+      if(!r.cast.length)h.push('<div class="empty">No credits logged.</div>');
+      r.cast.slice(0,40).forEach(function(c){
+        var p=r.pById[c.Person]||{};
+        h.push('<div class="dl"><span class="g">'+esc(p.Credited_Name||'?')+
+          (c.Character_Name?'<span class="s"> as '+esc(c.Character_Name)+'</span>':'')+
+          '</span>'+chk(has(p.Photo))+'</div>');
+      });
+      if(r.cast.length>40)h.push('<div class="empty">and '+(r.cast.length-40)+' more</div>');
+      h.push('</div><div><div class="dh">Summary</div>');
+      h.push('<div class="dl"><span class="g">Poster</span>'+chk(r.poster)+'</div>');
+      h.push('<div class="dl"><span class="g">Frame sets defined</span><span class="s">'+
+             r.sets+'</span></div>');
+      h.push('<div class="dl"><span class="g">Images still missing</span><span class="s">'+
+             r.gaps+'</span></div>');
+      h.push('</div></div></td></tr>');
+    }
+    return h.join('');
+  }
+
+  function personRow(r){
+    var h=['<tr class="main'+(open['p'+r.id]?' open':'')+'" data-open="p'+r.id+'">'];
+    h.push('<td><span class="ttl">'+esc(r.p.Credited_Name||'')+'</span>'+
+      (r.p.Real_Name&&r.p.Real_Name!==r.p.Credited_Name
+        ?'<div class="sub">'+esc(r.p.Real_Name)+'</div>':'')+'</td>');
+    h.push('<td class="num">'+chk(r.photo)+'</td>');
+    h.push('<td class="num">'+r.credits+'</td>');
+    h.push('<td class="num">'+r.nfilms+'</td>');
+    h.push('<td class="num">'+r.shots+'</td>');
+    h.push('<td><span class="sub">'+esc(r.p.Nationality||'')+'</span></td></tr>');
+    if(open['p'+r.id]){
+      h.push('<tr class="detail"><td colspan="6"><div class="dh">Films</div>');
+      r.films.sort(function(a,b){return (a.f.Year||0)-(b.f.Year||0);}).forEach(function(x){
+        h.push('<div class="dl"><span class="g">'+esc(x.f.Original_Title||'?')+
+          (x.f.Year?' <span class="s">('+parseInt(x.f.Year,10)+')</span>':'')+
+          (x.c.Character_Name?'<span class="s"> as '+esc(x.c.Character_Name)+'</span>':'')+
+          '</span><span class="s">poster</span>'+chk(has(x.f.Poster))+
+          '<span class="s">stills '+x.shots+'</span></div>');
+      });
+      h.push('</td></tr>');
+    }
+    return h.join('');
+  }
+
+  function bind(){
+    Array.prototype.forEach.call(root.querySelectorAll('th[data-k]'),function(th){
+      th.onclick=function(){
+        var k=th.getAttribute('data-k');
+        if(sortKey===k)sortDir=-sortDir; else {sortKey=k;sortDir=(k==='title'||k==='nat')?1:-1;}
+        build();
+      };
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('tr.main'),function(tr){
+      tr.onclick=function(){
+        var k=tr.getAttribute('data-open');
+        open[k]=!open[k];
+        var fid=tr.getAttribute('data-film');
+        if(fid){
+          try{grist.setCursorPos({rowId:Number(fid)});}catch(e){}
+          try{grist.setSelectedRows([Number(fid)]);}catch(e){}
+        }
+        build();
+      };
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){
+    b.onclick=function(){
+      view=b.getAttribute('data-v');
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(x){
+        x.classList.toggle('on',x===b);});
+      sortKey='title';sortDir=1;open={};
+      q.placeholder='Filter '+(view==='film'?'films':'people')+'\u2026';
+      build();
+    };
+  });
+  document.getElementById('gaps').onclick=function(){
+    gapsOnly=!gapsOnly;this.classList.toggle('on',gapsOnly);build();
+  };
+  q.addEventListener('input',build);
+
   grist.ready({requiredAccess:'full',allowSelectBy:true});
-  grist.onRecords(function(){ load(); });
+  async function load(){
+    D.films=await get(T.films); D.rel=await get(T.rel);
+    D.people=await get(T.people); D.stills=await get(T.stills);
+    D.fs=await get(T.fs); D.credits=await get(T.credits);
+    build();
+  }
+  grist.onRecords(function(){load();});
   load();
 })();
 </script>
