@@ -262,7 +262,7 @@
     cnt.textContent=pool().length+' people';
   }
 
-  grist.ready({requiredAccess:'full'});
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
   grist.onRecord(function(rec){
     if(Date.now()-suppress<1200)return;
     if(rec&&rec.Credited_Name!==undefined)render(rec);

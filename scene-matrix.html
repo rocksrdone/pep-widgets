@@ -290,7 +290,7 @@
     } finally { busy = false; }
   }
 
-  grist.ready({ requiredAccess:'full' });
+  grist.ready({ requiredAccess:'full', allowSelectBy:true });
   grist.onRecord(function(rec){
     filmId = rec ? rec.id : null;
     var n = rec && (rec.Original_Title || rec.English_Title);

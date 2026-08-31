@@ -560,7 +560,7 @@
     if(b&&e.target===b)b.style.display='none';
   });
 
-  grist.ready({requiredAccess:'full'});
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
   grist.onRecord(function(rec){
     if(Date.now()-suppress<1200)return;      // we just picked one ourselves
     if(!rec)return;
