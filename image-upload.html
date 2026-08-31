@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Image Upload</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:var(--chip);color:var(--muted);border-radius:13px;
+    padding:4px 12px;font:inherit;font-size:12px;cursor:pointer}
+  .tab.on{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+  #q{flex:1;min-width:170px;max-width:380px;padding:6px 11px;border:1px solid var(--line);
+    border-radius:16px;background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #hits{position:absolute;top:44px;left:12px;width:430px;max-height:320px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:last-child{border-bottom:0}
+  #hits div:hover,#hits div.sel{background:var(--chip)}
+  #hits .sub{color:var(--muted);font-size:11px}
+  #root{padding:12px;max-width:940px}
+  .who{font-size:13px;margin-bottom:4px}
+  .who b{font-size:15px}
+  .whosub{color:var(--muted);font-size:11px;margin-bottom:12px}
+  .opts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;
+    padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+  .opts label{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+  select{padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:var(--bg);
+    color:var(--fg);font:inherit;font-size:12px}
+  .slots{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+  .slot{border:1px dashed var(--line);border-radius:7px;padding:10px;background:var(--card);
+    text-align:center;transition:border-color .12s,background .12s}
+  .slot.over{border-color:var(--ok);background:rgba(22,179,120,.1)}
+  .slot h3{margin:0 0 7px;font-size:12px}
+  .thumb{width:100%;height:150px;border-radius:5px;border:1px solid var(--line);
+    background:var(--chip) center/contain no-repeat;margin-bottom:8px}
+  .thumb.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 8px,var(--bg) 8px,var(--bg) 16px)}
+  .drop{font-size:11px;color:var(--muted);line-height:1.6}
+  .row{display:flex;gap:6px;justify-content:center;margin-top:7px}
+  .mini{border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:12px;
+    padding:4px 11px;font:inherit;font-size:11px;cursor:pointer}
+  .mini:hover{border-color:var(--muted)}
+  .mini.del{color:var(--bad);border-color:var(--bad)}
+  .fname{font-size:10px;color:var(--muted);word-break:break-all;margin-top:6px;
+    font-family:ui-monospace,Menlo,Consolas,monospace}
+  #status{margin-top:14px;font-size:12px;min-height:18px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  #msg{padding:34px;text-align:center;color:var(--muted);line-height:1.7}
+  code{background:var(--chip);padding:1px 5px;border-radius:3px;font-size:11px}
+</style>
+</head>
+<body>
+<div id="bar">
+  <button class="tab on" data-m="release">Release artwork</button>
+  <button class="tab" data-m="person">Person photo</button>
+  <input id="q" placeholder="Search a release&hellip;" autocomplete="off">
+  <span id="count"></span>
+  <div id="hits"></div>
+</div>
+<div id="msg">Pick a mode, then search for the record to attach images to.</div>
+<div id="root" style="display:none"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var SLOTS={
+    release:[{col:'Cover_Front',label:'Front cover',tag:'front'},
+             {col:'Cover_Back', label:'Back cover', tag:'back'},
+             {col:'Disc_Art',   label:'Disc face',  tag:'disc'},
+             {col:'Insert',     label:'Insert / booklet',tag:'insert',multi:true}],
+    person:[{col:'Photo',label:'Portrait',tag:'portrait'}]
+  };
+  var mode='release',cur=null,data={},tok=null,tokAt=0,wtok=null,wtokAt=0,hi=-1,suppress=0;
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      q=document.getElementById('q'),hits=document.getElementById('hits'),
+      cnt=document.getElementById('count');
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function attArr(v){
+    if(v==null)return [];
+    if(typeof v==='number')return [v];
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
+    return [];
+  }
+  function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+
+  // filenames follow the project rule: no commas, no accents, nothing illegal
+  function clean(s){
+    return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/['\u2019]/g,' ').replace(/[,\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+  }
+
+  async function rTok(){
+    if(!tok||(Date.now()-tokAt)>60000){tok=await grist.docApi.getAccessToken({readOnly:true});tokAt=Date.now();}
+    return tok;
+  }
+  async function wTok(){
+    if(!wtok||(Date.now()-wtokAt)>60000){
+      wtok=await grist.docApi.getAccessToken({readOnly:false});wtokAt=Date.now();}
+    return wtok;
+  }
+  function attUrl(t,id){return t.baseUrl+'/attachments/'+id+'/download?auth='+encodeURIComponent(t.token);}
+
+  // ---- resize in the browser before uploading -------------------------------
+  function resize(file,maxEdge,quality){
+    return new Promise(function(res,rej){
+      if(!maxEdge){res({blob:file,w:0,h:0});return;}
+      var img=new Image(),u=URL.createObjectURL(file);
+      img.onload=function(){
+        var w=img.naturalWidth,h=img.naturalHeight,s=Math.min(1,maxEdge/Math.max(w,h));
+        var nw=Math.round(w*s),nh=Math.round(h*s);
+        var c=document.createElement('canvas');c.width=nw;c.height=nh;
+        var ctx=c.getContext('2d');
+        ctx.imageSmoothingQuality='high';
+        ctx.drawImage(img,0,0,nw,nh);
+        c.toBlob(function(b){URL.revokeObjectURL(u);res({blob:b||file,w:nw,h:nh});},
+                 'image/jpeg',quality);
+      };
+      img.onerror=function(){URL.revokeObjectURL(u);rej(new Error('Could not read that image'));};
+      img.src=u;
+    });
+  }
+
+  function fileNameFor(slot,ext){
+    if(mode==='person'){
+      return clean(cur.Credited_Name||'person')+' - '+slot.tag+'.'+ext;
+    }
+    var f=(data.Films||[]).filter(function(x){return x.id===cur.Film;})[0]||{};
+    var bits=[clean(f.Original_Title||'')+(f.Year?' ('+parseInt(f.Year,10)+')':''),
+              clean(cur.Title_On_Release||''),
+              [cur.Format,cur.Country].filter(Boolean).join(' ')];
+    return bits.filter(Boolean).join(' - ')+' - '+slot.tag+'.'+ext;
+  }
+
+  async function upload(blob,filename){
+    var t=await wTok();
+    var fd=new FormData();
+    fd.append('upload',blob,filename);
+    var r=await fetch(t.baseUrl+'/attachments?auth='+encodeURIComponent(t.token),
+                      {method:'POST',body:fd});
+    if(!r.ok)throw new Error('Upload failed ('+r.status+'). The widget needs full document access.');
+    var ids=await r.json();
+    if(!Array.isArray(ids)||!ids.length)throw new Error('No attachment id came back');
+    return ids[0];
+  }
+
+  async function attach(slot,files){
+    var st=document.getElementById('status');
+    var maxEdge=Number(document.getElementById('o_size').value)||0;
+    var quality=Number(document.getElementById('o_q').value);
+    st.className='';st.textContent='Processing\u2026';
+    try{
+      var existing=slot.multi?attArr(cur[slot.col]):[];
+      var added=[];
+      for(var i=0;i<files.length;i++){
+        var f=files[i];
+        if(!/^image\//.test(f.type)){st.className='bad';st.textContent=f.name+' is not an image.';return;}
+        var out=await resize(f,maxEdge,quality);
+        var ext=(out.blob.type==='image/jpeg')?'jpg':(f.name.split('.').pop()||'jpg').toLowerCase();
+        var nm=fileNameFor(slot,ext);
+        if(slot.multi&&(existing.length+added.length))
+          nm=nm.replace('.'+ext,' '+(existing.length+added.length+1)+'.'+ext);
+        st.textContent='Uploading '+nm+'\u2026';
+        added.push(await upload(out.blob,nm));
+      }
+      var val=['L'].concat(existing.concat(added));
+      var payload={};payload[slot.col]=val;
+      await grist.docApi.applyUserActions([['UpdateRecord',mode==='person'?'People':'Releases',
+                                           cur.id,payload]]);
+      await refresh();
+      document.getElementById('status').className='ok';
+      document.getElementById('status').textContent=
+        added.length+' image'+(added.length===1?'':'s')+' attached.';
+    }catch(err){
+      st.className='bad';st.textContent=String(err&&err.message||err);
+    }
+  }
+
+  async function clearSlot(slot){
+    if(!window.confirm('Remove the image in '+slot.label+'?'))return;
+    var payload={};payload[slot.col]=['L'];
+    try{
+      await grist.docApi.applyUserActions([['UpdateRecord',mode==='person'?'People':'Releases',
+                                           cur.id,payload]]);
+      await refresh();
+    }catch(err){
+      document.getElementById('status').className='bad';
+      document.getElementById('status').textContent=String(err&&err.message||err);
+    }
+  }
+
+  async function refresh(){
+    var tbl=mode==='person'?'People':'Releases';
+    data[tbl]=await get(tbl);
+    var id=cur.id;
+    for(var i=0;i<data[tbl].length;i++){if(data[tbl][i].id===id){cur=data[tbl][i];break;}}
+    render();
+  }
+
+  async function render(){
+    if(!cur){msg.style.display='block';root.style.display='none';return;}
+    msg.style.display='none';root.style.display='block';
+    var t=null;try{t=await rTok();}catch(e){}
+    var h=[];
+    if(mode==='person'){
+      h.push('<div class="who"><b>'+esc(cur.Credited_Name||'')+'</b></div>');
+      h.push('<div class="whosub">'+esc([cur.Real_Name,cur.Nationality].filter(Boolean).join(' \u00b7 '))+'</div>');
+    } else {
+      var f=(data.Films||[]).filter(function(x){return x.id===cur.Film;})[0]||{};
+      h.push('<div class="who"><b>'+esc(cur.Title_On_Release||'')+'</b></div>');
+      h.push('<div class="whosub">'+esc([f.Original_Title,cur.Format,cur.Country,cur.Region_Code,
+        cur.Ownership].filter(Boolean).join(' \u00b7 '))+'</div>');
+    }
+    h.push('<div class="opts">'+
+      '<label>Resize to <select id="o_size">'+
+        '<option value="1600">1600 px long edge</option>'+
+        '<option value="2400">2400 px</option>'+
+        '<option value="1200">1200 px</option>'+
+        '<option value="0">no resize (full size)</option>'+
+      '</select></label>'+
+      '<label>JPEG quality <select id="o_q">'+
+        '<option value="0.85">85 (recommended)</option>'+
+        '<option value="0.92">92</option>'+
+        '<option value="0.75">75</option>'+
+      '</select></label>'+
+      '<span style="font-size:11px;color:var(--muted)">Keep originals on the NAS \u2014 '+
+      'these copies live inside the Grist document.</span></div>');
+
+    h.push('<div class="slots">');
+    SLOTS[mode].forEach(function(s,i){
+      var ids=attArr(cur[s.col]);
+      h.push('<div class="slot" data-slot="'+i+'"><h3>'+esc(s.label)+'</h3>');
+      if(ids.length&&t){
+        h.push('<div class="thumb" style="background-image:url(\''+attUrl(t,ids[0])+'\')"></div>');
+        if(s.multi&&ids.length>1)h.push('<div class="fname">'+ids.length+' files</div>');
+      } else {
+        h.push('<div class="thumb empty"></div>');
+      }
+      h.push('<div class="drop">Drop an image here<br>or</div>');
+      h.push('<div class="row"><button class="mini" data-pick="'+i+'">Choose file</button>');
+      if(ids.length)h.push('<button class="mini del" data-clear="'+i+'">Remove</button>');
+      h.push('</div>');
+      h.push('<input type="file" accept="image/*" style="display:none" data-input="'+i+'"'+
+             (s.multi?' multiple':'')+'>');
+      h.push('</div>');
+    });
+    h.push('</div><div id="status"></div>');
+    root.innerHTML=h.join('');
+    bind();
+  }
+
+  function bind(){
+    SLOTS[mode].forEach(function(s,i){
+      var box=root.querySelector('[data-slot="'+i+'"]');
+      var inp=root.querySelector('[data-input="'+i+'"]');
+      root.querySelector('[data-pick="'+i+'"]').onclick=function(){inp.click();};
+      inp.onchange=function(){if(inp.files.length)attach(s,Array.prototype.slice.call(inp.files));};
+      var cl=root.querySelector('[data-clear="'+i+'"]');
+      if(cl)cl.onclick=function(){clearSlot(s);};
+      box.addEventListener('dragover',function(e){e.preventDefault();box.classList.add('over');});
+      box.addEventListener('dragleave',function(){box.classList.remove('over');});
+      box.addEventListener('drop',function(e){
+        e.preventDefault();box.classList.remove('over');
+        var fl=Array.prototype.slice.call(e.dataTransfer.files);
+        if(fl.length)attach(s,s.multi?fl:[fl[0]]);
+      });
+    });
+  }
+
+  // ---- picker ---------------------------------------------------------------
+  function pool(){return mode==='person'?(data.People||[]):(data.Releases||[]);}
+  function label(r){
+    if(mode==='person')return {a:r.Credited_Name||'(unnamed)',
+      b:[r.Real_Name,r.Aliases,r.Nationality].filter(Boolean).join(' \u00b7 ')};
+    var f=(data.Films||[]).filter(function(x){return x.id===r.Film;})[0]||{};
+    return {a:r.Title_On_Release||'(untitled)',
+      b:[f.Original_Title,r.Format,r.Country,r.Region_Code,r.Ownership].filter(Boolean).join(' \u00b7 ')};
+  }
+  function drawHits(){
+    var s=norm(q.value.trim()),w=s?s.split(/\s+/):[];
+    var list=pool().filter(function(r){
+      if(!w.length)return true;
+      var L=label(r);
+      var hay=norm(L.a+' '+L.b);
+      return w.every(function(x){return hay.indexOf(x)>=0;});
+    }).slice(0,60);
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.map(function(r,i){
+      var L=label(r);
+      return '<div data-id="'+r.id+'" class="'+(i===hi?'sel':'')+'"><b>'+esc(L.a)+
+        '</b><div class="sub">'+esc(L.b)+'</div></div>';}).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=function(e){e.preventDefault();pick(Number(d.getAttribute('data-id')));};});
+  }
+  function pick(id){
+    var list=pool();
+    for(var i=0;i<list.length;i++){if(list[i].id===id){cur=list[i];break;}}
+    hits.style.display='none';q.value='';q.blur();suppress=Date.now();
+    try{grist.setCursorPos({rowId:id});}catch(e){}
+    render();
+  }
+  q.addEventListener('focus',function(){hi=-1;drawHits();});
+  q.addEventListener('input',function(){hi=-1;drawHits();});
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+  q.addEventListener('keydown',function(e){
+    var rows=hits.children;
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();if(!rows.length)return;
+      hi=e.key==='ArrowDown'?Math.min(hi+1,rows.length-1):Math.max(hi-1,0);
+      Array.prototype.forEach.call(rows,function(r,i){r.classList.toggle('sel',i===hi);});
+    } else if(e.key==='Enter'&&hi>=0&&rows[hi]){pick(Number(rows[hi].getAttribute('data-id')));}
+    else if(e.key==='Escape'){hits.style.display='none';q.blur();}
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){
+    b.onclick=function(){
+      mode=b.getAttribute('data-m');
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(x){
+        x.classList.toggle('on',x===b);});
+      cur=null;root.style.display='none';msg.style.display='block';
+      msg.textContent='Search for a '+(mode==='person'?'person':'release')+' to attach images to.';
+      q.value='';q.placeholder='Search a '+(mode==='person'?'person':'release')+'\u2026';
+      cnt.textContent=pool().length+' rows';hits.style.display='none';
+    };
+  });
+
+  grist.ready({requiredAccess:'full'});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;
+    if(!rec)return;
+    if(mode==='person'&&rec.Credited_Name!==undefined){cur=rec;render();}
+    else if(mode==='release'&&rec.Title_On_Release!==undefined){cur=rec;render();}
+  });
+  (async function(){
+    data.Releases=await get('Releases');
+    data.People=await get('People');
+    data.Films=await get('Films');
+    cnt.textContent=pool().length+' rows';
+  })();
+})();
+</script>
+</body>
+</html>
