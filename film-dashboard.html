@@ -47,6 +47,14 @@
   .p .ph.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 6px,var(--card) 6px,var(--card) 12px)}
   .p .n{font-size:11px;font-weight:600;line-height:1.25}
   .p .c{font-size:10px;color:var(--muted)}
+  .alts{color:var(--muted);font-size:11.5px;margin-bottom:7px;max-width:620px;line-height:1.5}
+  .links{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .facts{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px}
+  .facts .fk{color:var(--muted);font-size:11px;display:block}
+  .facts .fv{font-size:12px;font-weight:600}
+  .folder{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .folder code{background:var(--chip);padding:3px 8px;border-radius:4px;font-size:11px;
+    font-family:ui-monospace,Menlo,Consolas,monospace}
   .cover{float:right;width:56px;height:78px;margin:0 0 6px 9px;border-radius:3px;
     border:1px solid var(--line);background:var(--chip) center/cover no-repeat;cursor:zoom-in}
   .cover:hover{border-color:var(--muted)}
@@ -124,7 +132,7 @@
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',scenes:'Scenes',
          avail:'SceneAvailability',credits:'Credits',people:'People',masters:'Masters',extras:'Extras'};
   var root=document.getElementById('root'),msg=document.getElementById('msg');
-  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],curTok=null;
+  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],franchises=[],curTok=null;
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -183,10 +191,22 @@
            (film.Year?' <span style="color:var(--muted);font-weight:400">('+parseInt(film.Year,10)+')</span>':'')+'</h1>');
     if(film.English_Title&&film.English_Title!==film.Original_Title)
       h.push('<div class="alt">'+esc(film.English_Title)+'</div>');
+    if(film.Alt_Titles){
+      var alts=String(film.Alt_Titles).split('|').map(function(x){return x.trim();}).filter(Boolean);
+      if(alts.length)h.push('<div class="alts">also known as '+esc(alts.join('  \u00b7  '))+'</div>');
+    }
     h.push('<div class="badges">');
     if(film.Branch)h.push('<span class="badge">'+esc(film.Branch)+'</span>');
     if(film.Setting_Era)h.push('<span class="badge">'+esc(film.Setting_Era)+'</span>');
+    if(film.Mode)h.push('<span class="badge">'+esc(film.Mode)+'</span>');
+    if(film.Work_Type&&film.Work_Type!=='Feature')
+      h.push('<span class="badge">'+esc(film.Work_Type)+'</span>');
+    var fr=(franchises||[]).filter(function(x){return x.id===film.Franchise;})[0];
+    if(fr&&fr.Name&&fr.Name.indexOf('standalone')<0)
+      h.push('<span class="badge">'+esc(fr.Name)+'</span>');
+    if(film.Country)h.push('<span class="badge">'+esc(film.Country)+'</span>');
     if(film.Director)h.push('<span class="badge">dir. '+esc(film.Director)+'</span>');
+    if(film.Adult)h.push('<span class="badge warn">adult</span>');
     h.push('<span class="badge '+(owned?'ok':'')+'">'+(owned?owned+' owned':'none owned')+'</span>');
     h.push('<span class="badge">'+rel.length+' release'+(rel.length===1?'':'s')+'</span>');
     h.push('<span class="badge '+(film.Eng_Audio_Found?'ok':'bad')+'">Eng dub '+(film.Eng_Audio_Found?'\u2713':'\u2715')+'</span>');
@@ -201,7 +221,43 @@
       var ur=(await get(T.rel)).filter(function(x){return x.id===film.Upgrade_Available;})[0];
       if(ur)h.push('<span class="badge warn">upgrade: '+esc(ur.Title_On_Release||'')+'</span>');
     }
+    if(film.Priority)h.push('<span class="badge">'+esc(film.Priority)+'</span>');
+    if(film.Research_Status)h.push('<span class="badge'+
+      (film.Research_Status==='Deep dive done'?' ok':'')+'">research: '+
+      esc(film.Research_Status)+'</span>');
     h.push('</div>');
+
+    // links
+    var links=[];
+    if(film.IMDb_URL)links.push(['IMDb',film.IMDb_URL]);
+    if(film.Reference_URL)links.push(['Reference',film.Reference_URL]);
+    String(film.Other_Links||'').split(/[|\s]+/).forEach(function(u){
+      if(/^https?:\/\//.test(u))links.push([u.replace(/^https?:\/\/(www\.)?/,'').split('/')[0],u]);
+    });
+    if(links.length){
+      h.push('<div class="links">');
+      links.forEach(function(l){
+        h.push('<a class="mini" href="'+esc(l[1])+'" target="_blank">'+esc(l[0])+'</a>');});
+      h.push('</div>');
+    }
+
+    // facts
+    var facts=[];
+    if(film.Reference_Runtime_Min)facts.push(['Reference runtime',film.Reference_Runtime_Min+' min']);
+    if(film.Longest_Runtime_Seen)facts.push(['Longest seen',film.Longest_Runtime_Seen+' min']);
+    if(film.Audio_Languages&&listText(film.Audio_Languages))
+      facts.push(['Audio found',listText(film.Audio_Languages)]);
+    if(film.Sub_Languages&&listText(film.Sub_Languages))
+      facts.push(['Subs found',listText(film.Sub_Languages)]);
+    if(facts.length){
+      h.push('<div class="facts">');
+      facts.forEach(function(f){
+        h.push('<div><span class="fk">'+esc(f[0])+'</span><span class="fv">'+esc(f[1])+'</span></div>');});
+      h.push('</div>');
+    }
+    if(film.Folder_Name)
+      h.push('<div class="folder"><code id="foldername">'+esc(film.Folder_Name)+'</code>'+
+             '<button class="mini" id="fcopy">copy</button></div>');
     if(film.Best_Version_Notes)h.push('<div class="note">'+esc(film.Best_Version_Notes)+'</div>');
     h.push('</div></div>');
 
@@ -326,6 +382,10 @@
       });
     }
 
+    if(film.Notes){
+      h.push('<h2>Notes</h2><div class="note" style="max-width:none">'+
+             esc(film.Notes).replace(/\n/g,'<br>')+'</div>');
+    }
     if(extras.length){
       h.push('<h2>Extras</h2><div class="chips">');
       extras.forEach(function(e){h.push('<span class="chip">'+esc(e.Category||'')+': '+esc(e.Title||'')+'</span>');});
@@ -333,6 +393,11 @@
     }
 
     root.innerHTML=h.join('');
+    var fc=document.getElementById('fcopy');
+    if(fc)fc.onclick=function(){
+      navigator.clipboard.writeText(document.getElementById('foldername').textContent).then(function(){
+        fc.textContent='copied';setTimeout(function(){fc.textContent='copy';},1300);});
+    };
     Array.prototype.forEach.call(root.querySelectorAll('[data-rel]'),function(el){
       el.onclick=function(e){e.stopPropagation();showCovers(Number(el.getAttribute('data-rel')));};
     });
@@ -480,6 +545,7 @@
     try{
       films=await get(T.films);
       window.__films=films;
+      franchises=await get('Franchises');
       films.sort(function(a,b){
         return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
       cnt.textContent=films.length+' films';
