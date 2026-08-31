@@ -97,6 +97,7 @@
 <div id="bar">
   <button class="tab on" data-m="release">Release artwork</button>
   <button class="tab" data-m="person">Person photo</button>
+  <button class="tab" data-m="poster">Film poster</button>
   <input id="q" placeholder="Search a release&hellip;" autocomplete="off">
   <span id="count"></span>
 </div>
@@ -112,10 +113,11 @@
              {col:'Cover_Back', label:'Back cover', tag:'back'},
              {col:'Disc_Art',   label:'Disc face',  tag:'disc'},
              {col:'Insert',     label:'Insert / booklet',tag:'insert',multi:true}],
-    person:[{col:'Photo',label:'Portrait',tag:'portrait'}]
+    person:[{col:'Photo',label:'Portrait',tag:'portrait'}],
+    poster:[{col:'Poster',label:'Poster',tag:'poster'}]
   };
   var onlyMissing=false,curTokCache=null;
-  var LOCK=(location.search.match(/[?&]mode=(person|release)/)||[])[1]||null;
+  var LOCK=(location.search.match(/[?&]mode=(person|release|poster)/)||[])[1]||null;
   var mode=LOCK||'release',cur=null,data={},tok=null,tokAt=0,wtok=null,wtokAt=0,hi=-1,suppress=0;
   var root=document.getElementById('root'),msg=document.getElementById('msg'),
       q=document.getElementById('q'),cnt=document.getElementById('count');
@@ -173,6 +175,10 @@
   function fileNameFor(slot,ext){
     if(mode==='person'){
       return clean(cur.Credited_Name||'person')+' - '+slot.tag+'.'+ext;
+    }
+    if(mode==='poster'){
+      return clean(cur.Original_Title||'film')+
+        (cur.Year?' ('+parseInt(cur.Year,10)+')':'')+' - '+slot.tag+'.'+ext;
     }
     var f=(data.Films||[]).filter(function(x){return x.id===cur.Film;})[0]||{};
     var ft=clean(f.Original_Title||''), rt=clean(cur.Title_On_Release||'');
@@ -242,8 +248,7 @@
         var added=[];
         for(var i=0;i<out.length;i++)added.push(await upload(out[i].blob,out[i].name));
         var payload={};payload[slot.col]=['L'].concat(existing.concat(added));
-        await grist.docApi.applyUserActions([['UpdateRecord',mode==='person'?'People':'Releases',
-                                             cur.id,payload]]);
+        await grist.docApi.applyUserActions([['UpdateRecord',tableFor(),cur.id,payload]]);
         await refresh();
         document.getElementById('status').className='ok';
         document.getElementById('status').textContent=
@@ -297,8 +302,7 @@
     if(!window.confirm('Remove the image in '+slot.label+'?'))return;
     var payload={};payload[slot.col]=['L'];
     try{
-      await grist.docApi.applyUserActions([['UpdateRecord',mode==='person'?'People':'Releases',
-                                           cur.id,payload]]);
+      await grist.docApi.applyUserActions([['UpdateRecord',tableFor(),cur.id,payload]]);
       await refresh();
     }catch(err){
       document.getElementById('status').className='bad';
@@ -307,7 +311,7 @@
   }
 
   async function refresh(){
-    var tbl=mode==='person'?'People':'Releases';
+    var tbl=tableFor();
     data[tbl]=await get(tbl);
     var id=cur.id;
     for(var i=0;i<data[tbl].length;i++){if(data[tbl][i].id===id){cur=data[tbl][i];break;}}
@@ -377,14 +381,18 @@
   function renderPanel(t){
     var p=document.getElementById('panel');
     if(!cur){
-      p.innerHTML='<div class="lempty" style="padding:40px 12px">Pick a '+
-        (mode==='person'?'person':'release')+' on the left.</div>';
+      p.innerHTML='<div class="lempty" style="padding:40px 12px">Pick a '+noun()+
+        ' on the left.</div>';
       return;
     }
     var h=[];
     if(mode==='person'){
       h.push('<div class="who"><b>'+esc(cur.Credited_Name||'')+'</b></div>');
       h.push('<div class="whosub">'+esc([cur.Real_Name,cur.Nationality].filter(Boolean).join(' \u00b7 '))+'</div>');
+    } else if(mode==='poster'){
+      h.push('<div class="who"><b>'+esc(cur.Original_Title||'')+
+        (cur.Year?' ('+parseInt(cur.Year,10)+')':'')+'</b></div>');
+      h.push('<div class="whosub">'+esc([cur.English_Title,cur.Director].filter(Boolean).join(' \u00b7 '))+'</div>');
     } else {
       var f=(data.Films||[]).filter(function(x){return x.id===cur.Film;})[0]||{};
       h.push('<div class="who"><b>'+esc(cur.Title_On_Release||'')+'</b></div>');
@@ -447,10 +455,17 @@
   }
 
   // ---- picker ---------------------------------------------------------------
-  function pool(){return mode==='person'?(data.People||[]):(data.Releases||[]);}
+  function tableFor(){return mode==='person'?'People':mode==='poster'?'Films':'Releases';}
+  function pool(){return mode==='person'?(data.People||[]):
+                         mode==='poster'?(data.Films||[]):(data.Releases||[]);}
+  function noun(){return mode==='person'?'person':mode==='poster'?'film':'release';}
+  function nouns(){return mode==='person'?'people':mode==='poster'?'films':'releases';}
   function label(r){
     if(mode==='person')return {a:r.Credited_Name||'(unnamed)',
       b:[r.Real_Name,r.Aliases,r.Nationality].filter(Boolean).join(' \u00b7 ')};
+    if(mode==='poster')return {a:(r.Original_Title||'(untitled)')+
+      (r.Year?' ('+parseInt(r.Year,10)+')':''),
+      b:[r.English_Title,r.Branch,r.Director].filter(Boolean).join(' \u00b7 ')};
     var f=(data.Films||[]).filter(function(x){return x.id===r.Film;})[0]||{};
     return {a:r.Title_On_Release||'(untitled)',
       b:[f.Original_Title,r.Format,r.Country,r.Region_Code,r.Ownership].filter(Boolean).join(' \u00b7 ')};
@@ -484,7 +499,7 @@
       Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(x){
         x.classList.toggle('on',x===b);});
       cur=null;q.value='';
-      q.placeholder='Filter '+(mode==='person'?'people':'releases')+'\u2026';
+      q.placeholder='Filter '+nouns()+'\u2026';
       cnt.textContent=pool().length+' rows';
       render();
     };
@@ -495,6 +510,7 @@
     if(Date.now()-suppress<1200)return;
     if(!rec)return;
     if(mode==='person'&&rec.Credited_Name!==undefined){cur=rec;render();}
+    else if(mode==='poster'&&rec.Original_Title!==undefined){cur=rec;render();}
     else if(mode==='release'&&rec.Title_On_Release!==undefined){cur=rec;render();}
   });
   (async function(){
@@ -503,7 +519,7 @@
     data.Films=await get('Films');
     data.Labels=await get('Labels');
     cnt.textContent=pool().length+' rows';
-    q.placeholder='Filter '+(mode==='person'?'people':'releases')+'\u2026';
+    q.placeholder='Filter '+nouns()+'\u2026';
     render();
   })();
 })();

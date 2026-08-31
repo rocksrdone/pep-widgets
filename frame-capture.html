@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frame Capture</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #q{flex:1;min-width:170px;max-width:360px;padding:6px 11px;border:1px solid var(--line);
+    border-radius:16px;background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #count{font-size:11px;color:var(--muted)}
+  #root{padding:12px;max-width:1000px}
+  .cols{display:grid;gap:14px;grid-template-columns:280px 1fr;align-items:start}
+  @media (max-width:860px){.cols{grid-template-columns:1fr}}
+  .listcol{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--card)}
+  #list{max-height:70vh;overflow:auto}
+  .lrow{display:flex;gap:9px;align-items:center;padding:7px 9px;cursor:pointer;
+    border-bottom:1px solid var(--line)}
+  .lrow:last-child{border-bottom:0}
+  .lrow:hover{background:var(--chip)}
+  .lrow.on{background:rgba(22,179,120,.14);box-shadow:inset 3px 0 0 var(--ok)}
+  .lmeta{min-width:0;flex:1}
+  .lname{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lsub{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbadge{flex:0 0 auto;font-size:10px;padding:1px 7px;border-radius:9px;background:var(--chip);
+    border:1px solid var(--line);color:var(--muted)}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:0 0 8px;font-weight:600}
+  .who{font-size:15px;font-weight:600}
+  .whosub{color:var(--muted);font-size:11px;margin-bottom:12px}
+  .fsbar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;
+    padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+  input,select{padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:var(--bg);
+    color:var(--fg);font:inherit;font-size:12px}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+  .rel{display:flex;gap:11px;align-items:center;padding:9px 10px;border:1px solid var(--line);
+    border-radius:6px;background:var(--card);margin-bottom:7px}
+  .rel.has{border-color:var(--ok)}
+  .rthumb{flex:0 0 auto;width:84px;height:48px;border-radius:3px;border:1px solid var(--line);
+    background:#000 center/cover no-repeat}
+  .rthumb.empty{background:repeating-linear-gradient(45deg,var(--chip),var(--chip) 6px,var(--bg) 6px,var(--bg) 12px)}
+  .rmeta{min-width:0;flex:1}
+  .rname{font-size:12px;font-weight:600}
+  .rsub{font-size:11px;color:var(--muted)}
+  .racts{display:flex;gap:6px;align-items:center;flex:0 0 auto}
+  .tc{width:96px;font-family:var(--mono);font-size:11px}
+  .state{font-size:10px;padding:1px 8px;border-radius:9px}
+  .state.row{background:var(--warn);color:#1c1c1c}
+  .state.img{background:var(--ok);color:#fff}
+  .state.no{background:var(--chip);border:1px solid var(--line);color:var(--muted)}
+  #status{margin-top:12px;font-size:12px;line-height:1.6}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  .note{margin-top:12px;padding:9px 11px;border:1px solid var(--line);border-radius:6px;
+    background:var(--chip);font-size:11px;color:var(--muted);line-height:1.65}
+  .note b{color:var(--fg)}
+  code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:10.5px}
+  .lempty{padding:20px 12px;color:var(--muted);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="q" placeholder="Filter films&hellip;" autocomplete="off">
+  <span id="count"></span>
+</div>
+<div id="root"></div>
+
+<script>
+(function(){
+  "use strict";
+  var T={films:'Films',rel:'Releases',fs:'FrameSets',stills:'Stills'};
+  var data={},film=null,fsId=null,tok=null,tokAt=0;
+  var root=document.getElementById('root'),q=document.getElementById('q'),
+      cnt=document.getElementById('count');
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
+  function attArr(v){
+    if(v==null)return [];
+    if(typeof v==='number')return [v];
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
+    return [];
+  }
+  function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  function clean(s){
+    return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/['\u2019]/g,' ').replace(/[,\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+  }
+  async function rTok(){
+    if(!tok||(Date.now()-tokAt)>60000){tok=await grist.docApi.getAccessToken({readOnly:true});tokAt=Date.now();}
+    return tok;
+  }
+  function attUrl(t,id){return t.baseUrl+'/attachments/'+id+'/download?auth='+encodeURIComponent(t.token);}
+
+  function releasesOf(f){return (data.Releases||[]).filter(function(r){return r.Film===f.id;});}
+  function frameSetsOf(f){return (data.FrameSets||[]).filter(function(x){return x.Film===f.id;});}
+  function stillFor(relId){
+    return (data.Stills||[]).filter(function(s){
+      return s.Frame_Set===fsId&&s.Release===relId;})[0]||null;
+  }
+
+  // ---- render ---------------------------------------------------------------
+  async function render(){
+    var t=null;try{t=await rTok();}catch(e){}
+    root.innerHTML='<div class="cols"><div class="listcol"><div id="list"></div></div>'+
+                   '<div id="panel"></div></div>';
+    renderList();
+    renderPanel(t);
+  }
+
+  function renderList(){
+    var s=norm(q.value.trim()),w=s?s.split(/\s+/):[];
+    var list=(data.Films||[]).filter(function(f){
+      if(!w.length)return true;
+      var hay=norm([f.Original_Title,f.English_Title,f.Year].filter(Boolean).join(' '));
+      return w.every(function(x){return hay.indexOf(x)>=0;});
+    });
+    cnt.textContent=list.length+' of '+(data.Films||[]).length;
+    if(!list.length){document.getElementById('list').innerHTML=
+      '<div class="lempty">Nothing matches.</div>';return;}
+    document.getElementById('list').innerHTML=list.map(function(f){
+      var nfs=frameSetsOf(f).length;
+      return '<div class="lrow'+(film&&film.id===f.id?' on':'')+'" data-id="'+f.id+'">'+
+        '<div class="lmeta"><div class="lname">'+esc(f.Original_Title||'(untitled)')+
+        (f.Year?' <span class="lsub">('+parseInt(f.Year,10)+')</span>':'')+'</div>'+
+        '<div class="lsub">'+releasesOf(f).length+' releases</div></div>'+
+        '<span class="lbadge">'+nfs+' sets</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.lrow'),function(el){
+      el.onclick=function(){
+        var id=Number(el.getAttribute('data-id'));
+        film=(data.Films||[]).filter(function(f){return f.id===id;})[0]||null;
+        var sets=frameSetsOf(film);
+        fsId=sets.length?sets[0].id:null;
+        try{grist.setCursorPos({rowId:id});}catch(e){}
+        render();
+      };
+    });
+  }
+
+  function renderPanel(t){
+    var p=document.getElementById('panel');
+    if(!film){p.innerHTML='<div class="lempty" style="padding:44px 12px">'+
+      'Pick a film on the left.</div>';return;}
+    var sets=frameSetsOf(film), rels=releasesOf(film);
+    var h=[];
+    h.push('<div class="who">'+esc(film.Original_Title||'')+
+      (film.Year?' ('+parseInt(film.Year,10)+')':'')+'</div>');
+    h.push('<div class="whosub">'+rels.length+' releases \u00b7 '+sets.length+' frame sets</div>');
+
+    h.push('<div class="fsbar"><div><label>Frame set</label><select id="fssel">'+
+      sets.map(function(s){return '<option value="'+s.id+'"'+(s.id===fsId?' selected':'')+'>'+
+        esc(s.Label||('set '+s.id))+'</option>';}).join('')+
+      (sets.length?'':'<option value="">none yet</option>')+'</select></div>'+
+      '<div><label>New set label</label><input id="newlabel" placeholder="04 - Chariot close-up"></div>'+
+      '<div><label>Its timecode</label><input id="newtc" class="tc" placeholder="00:41:12"></div>'+
+      '<button class="btn" id="addfs">Add frame set</button></div>');
+
+    if(!rels.length){
+      h.push('<div class="lempty">No releases logged for this film yet.</div>');
+      p.innerHTML=h.join('');bindFs();return;
+    }
+    if(!fsId){
+      h.push('<div class="lempty">Create a frame set above to start capturing.</div>');
+      p.innerHTML=h.join('');bindFs();return;
+    }
+
+    var fs=sets.filter(function(s){return s.id===fsId;})[0]||{};
+    if(fs.What_To_Look_For)h.push('<div class="note">'+esc(fs.What_To_Look_For)+'</div>');
+    h.push('<h2 style="margin-top:14px">One capture per release</h2>');
+    rels.forEach(function(r){
+      var st=stillFor(r.id);
+      var img=st?attArr(st.Image)[0]:null;
+      h.push('<div class="rel'+(img?' has':'')+'" data-rel="'+r.id+'">');
+      h.push(img&&t?'<div class="rthumb" style="background-image:url(\''+attUrl(t,img)+'\')"></div>'
+                   :'<div class="rthumb empty"></div>');
+      h.push('<div class="rmeta"><div class="rname">'+esc(r.Title_On_Release||'')+'</div>'+
+        '<div class="rsub">'+esc([r.Format,r.Country,r.Video_Standard,r.Aspect_Ratio]
+          .filter(Boolean).join(' \u00b7 '))+'</div></div>');
+      h.push('<div class="racts">');
+      h.push('<input class="tc" data-tc="'+r.id+'" placeholder="timecode" value="'+
+             esc(st&&st.Timecode||fs.Reference_Timecode||'')+'">');
+      h.push(img?'<span class="state img">image in</span>'
+                :st?'<span class="state row">row ready</span>'
+                   :'<span class="state no">no row</span>');
+      if(!st)h.push('<button class="btn" data-mk="'+r.id+'">Create row</button>');
+      h.push('<button class="btn" data-file="'+r.id+'">Rename capture</button>');
+      h.push('<input type="file" accept="image/*" style="display:none" data-input="'+r.id+'">');
+      h.push('</div></div>');
+    });
+
+    h.push('<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="btn go" id="mkall">Create rows for every release</button>'+
+      '<button class="btn" id="showrows">Show these rows in the grid</button></div>');
+    h.push('<div id="status"></div>');
+    h.push('<div class="note"><b>Captures are never resized or re-encoded here.</b> '+
+      '\u201cRename capture\u201d hands back the identical file with a proper name \u2014 same bytes, '+
+      'same dimensions. Drop the renamed file into the <code>Image</code> cell of the matching row '+
+      'in the grid. Anything that recompressed the frame would make the comparison meaningless.</div>');
+    p.innerHTML=h.join('');
+    bindFs();bindRels();
+  }
+
+  function bindFs(){
+    var sel=document.getElementById('fssel');
+    if(sel)sel.onchange=function(){fsId=Number(sel.value)||null;render();};
+    var add=document.getElementById('addfs');
+    if(add)add.onclick=async function(){
+      var lab=document.getElementById('newlabel').value.trim();
+      if(!lab)return;
+      var f={Film:film.id,Label:lab};
+      var tc=document.getElementById('newtc').value.trim();
+      if(tc)f.Reference_Timecode=tc;
+      try{
+        var r=await grist.docApi.applyUserActions([['AddRecord',T.fs,null,f]]);
+        data.FrameSets=await get(T.fs);
+        fsId=r&&r.retValues&&r.retValues[0]||fsId;
+        render();
+      }catch(err){alert('Could not add the frame set: '+(err&&err.message||err));}
+    };
+  }
+
+  function nameFor(rel,tcVal){
+    var fs=(data.FrameSets||[]).filter(function(s){return s.id===fsId;})[0]||{};
+    return [clean(film.Original_Title)+(film.Year?' ('+parseInt(film.Year,10)+')':''),
+            clean(fs.Label||''),
+            clean(rel.Title_On_Release||''),
+            String(tcVal||'').trim().replace(/[:.]/g,'-')]
+           .filter(Boolean).join(' - ');
+  }
+
+  async function createRow(relId){
+    var tcEl=document.querySelector('[data-tc="'+relId+'"]');
+    var f={Film:film.id,Release:relId,Frame_Set:fsId,Purpose:'Frame comparison'};
+    if(tcEl&&tcEl.value.trim())f.Timecode=tcEl.value.trim();
+    await grist.docApi.applyUserActions([['AddRecord',T.stills,null,f]]);
+  }
+
+  function bindRels(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mk]'),function(b){
+      b.onclick=async function(){
+        var st=document.getElementById('status');
+        st.className='';st.textContent='Creating\u2026';
+        try{
+          await createRow(Number(b.getAttribute('data-mk')));
+          data.Stills=await get(T.stills);
+          render();
+        }catch(err){st.className='bad';st.textContent=String(err&&err.message||err);}
+      };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-file]'),function(b){
+      var id=Number(b.getAttribute('data-file'));
+      var inp=document.querySelector('[data-input="'+id+'"]');
+      b.onclick=function(){inp.click();};
+      inp.onchange=function(){
+        if(!inp.files.length)return;
+        var f=inp.files[0];
+        var rel=(data.Releases||[]).filter(function(r){return r.id===id;})[0]||{};
+        var tcEl=document.querySelector('[data-tc="'+id+'"]');
+        var ext=(f.name.split('.').pop()||'png').toLowerCase();
+        var nm=nameFor(rel,tcEl?tcEl.value:'')+'.'+ext;
+        // same bytes, new name - no canvas, no re-encoding
+        var u=URL.createObjectURL(f);
+        var a=document.createElement('a');
+        a.href=u;a.download=nm;document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(u);a.remove();},1500);
+        var st=document.getElementById('status');
+        st.className='ok';
+        st.innerHTML='Saved as <code>'+esc(nm)+'</code> \u2014 untouched, '+
+          Math.round(f.size/1024)+' KB. Drop it into the <code>Image</code> cell for '+
+          esc(rel.Title_On_Release||'')+'.';
+      };
+    });
+    var all=document.getElementById('mkall');
+    if(all)all.onclick=async function(){
+      var st=document.getElementById('status');
+      st.className='';st.textContent='Creating\u2026';
+      try{
+        var made=0;
+        var rels=releasesOf(film);
+        for(var i=0;i<rels.length;i++){
+          if(stillFor(rels[i].id))continue;
+          await createRow(rels[i].id);made++;
+        }
+        data.Stills=await get(T.stills);
+        render();
+        document.getElementById('status').className='ok';
+        document.getElementById('status').textContent=made+' row'+(made===1?'':'s')+' created.';
+      }catch(err){st.className='bad';st.textContent=String(err&&err.message||err);}
+    };
+    var show=document.getElementById('showrows');
+    if(show)show.onclick=function(){
+      var ids=(data.Stills||[]).filter(function(s){return s.Frame_Set===fsId;})
+                               .map(function(s){return s.id;});
+      try{grist.setSelectedRows(ids);}catch(e){}
+      if(ids.length){try{grist.setCursorPos({rowId:ids[0]});}catch(e){}}
+    };
+  }
+
+  q.addEventListener('input',function(){if(document.getElementById('list'))renderList();});
+
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
+  (async function(){
+    data.Films=await get(T.films);
+    data.Releases=await get(T.rel);
+    data.FrameSets=await get(T.fs);
+    data.Stills=await get(T.stills);
+    data.Films.sort(function(a,b){
+      return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
