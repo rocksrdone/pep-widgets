@@ -53,7 +53,9 @@
   .mini.del{color:var(--bad);border-color:var(--bad)}
   .fname{font-size:10px;color:var(--muted);word-break:break-all;margin-top:6px;
     font-family:ui-monospace,Menlo,Consolas,monospace}
-  #status{margin-top:14px;font-size:12px;min-height:18px}
+  #status{margin-top:14px;font-size:12px;min-height:18px;line-height:1.6}
+  .prep{margin-top:10px;padding:9px 11px;border:1px solid var(--warn);border-radius:6px;
+    background:rgba(229,168,59,.12);color:var(--fg);font-size:12px}
   #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
   #msg{padding:34px;text-align:center;color:var(--muted);line-height:1.7}
   code{background:var(--chip);padding:1px 5px;border-radius:3px;font-size:11px}
@@ -159,6 +161,18 @@
     return ids[0];
   }
 
+  var prepared=[];   // {name, blob} kept when the upload route is unavailable
+
+  function offerDownloads(){
+    if(!prepared.length)return '';
+    return '<div class="prep"><b>Prepared files</b> \u2014 download these, then drag them straight '+
+      'into the '+(mode==='person'?'Photo':'cover')+' cell in the grid. They are already resized '+
+      'and named correctly.<div class="row" style="justify-content:flex-start;margin-top:7px">'+
+      prepared.map(function(p,i){
+        return '<button class="mini" data-dl="'+i+'">'+esc(p.name)+'</button>';}).join('')+
+      '</div></div>';
+  }
+
   async function attach(slot,files){
     var st=document.getElementById('status');
     var maxEdge=Number(document.getElementById('o_size').value)||0;
@@ -187,8 +201,42 @@
       document.getElementById('status').textContent=
         added.length+' image'+(added.length===1?'':'s')+' attached.';
     }catch(err){
-      st.className='bad';st.textContent=String(err&&err.message||err);
+      var m=String(err&&err.message||err);
+      st.className='bad';
+      if(/Failed to fetch|NetworkError|Load failed/i.test(m)){
+        st.innerHTML='Your Grist server refused a cross-origin upload from this widget '+
+          '(a CORS block, not a permissions problem). Nothing was written.'+
+          '<div style="margin-top:8px"></div>';
+        try{
+          prepared=[];
+          var mx=Number(document.getElementById('o_size').value)||0;
+          var qy=Number(document.getElementById('o_q').value);
+          for(var k=0;k<files.length;k++){
+            var o=await resize(files[k],mx,qy);
+            var ex=(o.blob.type==='image/jpeg')?'jpg':(files[k].name.split('.').pop()||'jpg').toLowerCase();
+            var nn=fileNameFor(slot,ex);
+            if(slot.multi&&k)nn=nn.replace('.'+ex,' '+(k+1)+'.'+ex);
+            prepared.push({name:nn,blob:o.blob});
+          }
+          st.innerHTML+=offerDownloads();
+          bindDownloads();
+        }catch(e2){}
+      } else {
+        st.textContent=m;
+      }
     }
+  }
+
+  function bindDownloads(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-dl]'),function(b){
+      b.onclick=function(){
+        var p=prepared[Number(b.getAttribute('data-dl'))];
+        var u=URL.createObjectURL(p.blob);
+        var a=document.createElement('a');
+        a.href=u;a.download=p.name;document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(u);a.remove();},1500);
+      };
+    });
   }
 
   async function clearSlot(slot){
