@@ -319,6 +319,7 @@
     var f=films.filter(function(x){return x.id===id;})[0];if(!f)return;
     hits.style.display='none';q.value='';q.blur();hi=-1;suppress=Date.now();
     try{grist.setCursorPos({rowId:id});}catch(e){}
+    try{grist.setSelectedRows([id]);}catch(e){}
     build(f);
   }
   q.addEventListener('focus',function(){hi=-1;drawHits();});

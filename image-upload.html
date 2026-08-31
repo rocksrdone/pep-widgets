@@ -460,6 +460,7 @@
     for(var i=0;i<list.length;i++){if(list[i].id===id){cur=list[i];break;}}
     suppress=Date.now();
     try{grist.setCursorPos({rowId:id});}catch(e){}
+    try{grist.setSelectedRows([id]);}catch(e){}
     render();
   }
   q.addEventListener('input',function(){ if(document.getElementById('list'))renderList(curTokCache); });

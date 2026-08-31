@@ -270,6 +270,7 @@
     hits.style.display='none';q.value='';q.blur();
     suppress=Date.now();
     try{grist.setCursorPos({rowId:id});}catch(e){}
+    try{grist.setSelectedRows([id]);}catch(e){}
     render();
   }
 

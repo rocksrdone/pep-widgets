@@ -358,7 +358,8 @@
   function pick(id){
     film=films.filter(function(x){return x.id===id;})[0]||null;
     hits.style.display='none';q.value='';q.blur();suppress=Date.now();
-    if(film){try{grist.setCursorPos({rowId:id});}catch(e){}}
+    if(film){try{grist.setCursorPos({rowId:id});}catch(e){}
+    try{grist.setSelectedRows([id]);}catch(e){}}
     setFilm(film);
   }
   function setFilm(f){
@@ -380,7 +381,7 @@
     else if(e.key==='Escape'){hits.style.display='none';q.blur();}
   });
 
-  grist.ready({requiredAccess:'full'});
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
   grist.onRecord(function(rec){
     if(Date.now()-suppress<1200)return;
     if(rec&&rec.Original_Title!==undefined)setFilm(rec);

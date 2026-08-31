@@ -522,6 +522,7 @@
     filmId=id;hits.style.display='none';q.value='';q.blur();hi=-1;
     suppress=Date.now();
     try{grist.setCursorPos({rowId:id});}catch(e){}
+    try{grist.setSelectedRows([id]);}catch(e){}
     render(f);
   }
   q.addEventListener('focus',function(){hi=-1;drawHits();});
