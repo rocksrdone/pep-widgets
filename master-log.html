@@ -44,6 +44,16 @@
   pre{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:9px 11px;
     font-family:var(--mono);font-size:11px;overflow-x:auto;margin:7px 0;white-space:pre-wrap;
     word-break:break-word}
+  .health{border:1px solid var(--line);border-radius:7px;padding:11px 12px;background:var(--card);
+    margin-bottom:14px}
+  .health label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--muted);margin-bottom:3px}
+  .hrow{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+  .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chips button{border:1px solid var(--line);background:var(--bg);color:var(--muted);
+    border-radius:12px;padding:3px 10px;font:inherit;font-size:11px;cursor:pointer}
+  .chips button.on{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
+  #hstatus{font-size:11px;color:var(--ok);margin-top:7px;min-height:14px}
   .kindrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
   .kindrow .btn{font-size:11px}
   .empty{color:var(--muted);font-size:12px;padding:8px 0}
@@ -74,6 +84,11 @@
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',
          masters:'Masters',parts:'MasterParts',scenes:'Scenes',labels:'Labels'};
   var KINDS=['Video','Audio','Subtitle','Scene insert','Chapters','Other'];
+  var HEALTH=['Finished','Good enough','Needs rework','Superseded','Abandoned'];
+  var STATUS=['Sources gathering','Converting','Editing','Subtitling','Muxing','Mastered','Blocked'];
+  var REWORK=['Better video source','Better English audio','Better subtitles','Missing scenes',
+              'Sync drift','Aspect ratio wrong','Re-encode artefacts','Chapters missing',
+              'Track names missing','Artwork missing'];
   var TREAT=['Untouched','Speed corrected PAL to NTSC','Speed corrected NTSC to PAL',
              'Resynced by hand','OCR from image subs','Translated','Retimed','Re-encoded',
              'Volume matched','Cut to fit'];
@@ -105,6 +120,11 @@
     return [r.Title_On_Release||'',labelName(r.Label),r.Format,r.Country,r.Region_Code]
              .filter(Boolean).join(' \u00b7 ')+q+
            (r.Ownership&&r.Ownership!=='Owned'?' ('+r.Ownership.toLowerCase()+')':'');
+  }
+  function listArr(v){
+    if(v==null)return [];
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
+    return String(v)?[String(v)]:[];
   }
   function partsOf(m){
     return (D.parts||[]).filter(function(p){return p.Master===m.id;})
@@ -176,6 +196,24 @@
     var f=filmOf(cur),ps=partsOf(cur);
     var rels=(D.rel||[]).filter(function(r){return r.Film===cur.Film;});
     var h=[];
+    h.push('<h2>How this build stands</h2>');
+    h.push('<div class="health"><div class="hrow">'+
+      '<div><label>Status</label><select data-m="Status"><option value="">\u2014</option>'+
+        STATUS.map(function(x){return '<option'+(cur.Status===x?' selected':'')+'>'+esc(x)+
+          '</option>';}).join('')+'</select></div>'+
+      '<div><label>Health</label><select data-m="Master_Health"><option value="">\u2014</option>'+
+        HEALTH.map(function(x){return '<option'+(cur.Master_Health===x?' selected':'')+'>'+esc(x)+
+          '</option>';}).join('')+'</select></div>'+
+      '</div>'+
+      '<div style="margin-top:9px"><label>What would improve it</label>'+
+      '<div class="chips" id="rework">'+REWORK.map(function(x){
+        return '<button type="button" data-rw="'+esc(x)+'" class="'+
+          (listArr(cur.Rework_Needed).indexOf(x)>=0?'on':'')+'">'+esc(x)+'</button>';}).join('')+
+      '</div></div>'+
+      '<div style="margin-top:9px"><label>Notes on what needs doing</label>'+
+      '<input data-m="Rework_Notes" value="'+esc(cur.Rework_Notes||'')+
+      '" placeholder="English dub drifts after the reel 3 change"></div>'+
+      '<div id="hstatus"></div></div>');
     h.push('<h2>What went into this master</h2>');
     h.push('<div class="kindrow">'+KINDS.map(function(k){
       return '<button class="btn" data-add="'+esc(k)+'">+ '+esc(k)+'</button>';}).join('')+'</div>');
@@ -234,7 +272,36 @@
     bind();
   }
 
+  async function saveMaster(fields){
+    try{
+      await grist.docApi.applyUserActions([['UpdateRecord',T.masters,cur.id,fields]]);
+      Object.keys(fields).forEach(function(k){cur[k]=fields[k];});
+      D.masters=await get(T.masters);
+      var hs=document.getElementById('hstatus');
+      if(hs){hs.style.color='var(--ok)';hs.textContent='Saved.';
+        setTimeout(function(){hs.textContent='';},1400);}
+    }catch(e){
+      var hs2=document.getElementById('hstatus');
+      if(hs2){hs2.style.color='var(--bad)';
+        hs2.innerHTML='Could not save \u2014 add the <b>'+esc(Object.keys(fields)[0])+
+          '</b> column to Masters.';}
+    }
+  }
   function bind(){
+    Array.prototype.forEach.call(root.querySelectorAll('[data-m]'),function(el){
+      el.onchange=function(){
+        var f={};f[el.getAttribute('data-m')]=el.value;saveMaster(f);
+      };
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-rw]'),function(b){
+      b.onclick=function(){
+        b.classList.toggle('on');
+        var picked=Array.prototype.map.call(
+          document.querySelectorAll('#rework button.on'),
+          function(x){return x.getAttribute('data-rw');});
+        saveMaster({Rework_Needed:['L'].concat(picked)});
+      };
+    });
     Array.prototype.forEach.call(root.querySelectorAll('[data-add]'),function(b){
       b.onclick=function(){addPart(b.getAttribute('data-add'));};
     });
