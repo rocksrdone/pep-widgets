@@ -130,8 +130,11 @@
        {id:'Best_Version_Notes',t:'area',wide:1},{id:'Notes',t:'area',wide:1}]},
 
     Releases:{ label:'Releases', title:function(r){return r.Title_On_Release||'(untitled)';},
-      sub:function(r){return [r.Format,r.Country,r.Region_Code,r.Ownership].filter(Boolean).join(' \u00b7 ');},
+      sub:function(r,ctx){var l=ctx.Labels[r.Label],f=ctx.Films[r.Film];
+        return [(f&&f.Original_Title)||'',r.Format,(l&&l.Name)||'',r.Country,r.Region_Code,
+                r.Ownership].filter(Boolean).join(' \u00b7 ');},
       search:['Title_On_Release','Format','Country','Catalog_Number','Region_Code'],
+      searchRef:[['Label','Labels','Name'],['Film','Films','Original_Title']],
       fields:[
        {id:'Film',t:'ref',ref:'Films',show:'Original_Title',wide:1},
        {id:'Title_On_Release',t:'text',wide:1},
@@ -159,7 +162,8 @@
     AudioTracks:{ label:'Audio',
       title:function(r,ctx){var rl=ctx.Releases[r.Release];
         return (r.Language||'?')+' \u00b7 '+((rl&&rl.Title_On_Release)||'no release');},
-      sub:function(r){return [r.Track_Type,r.Codec,r.Channels,
+      sub:function(r,ctx){var rl=ctx.Releases[r.Release],l=rl?ctx.Labels[rl.Label]:null;
+        return [r.Track_Type,(l&&l.Name)||'',r.Codec,r.Channels,
         r.Bitrate?r.Bitrate+' kb/s':''].filter(Boolean).join(' \u00b7 ');},
       search:['Language','Track_Type','Codec'],
       searchRef:[['Release','Releases','Title_On_Release']],
@@ -240,7 +244,7 @@
     .toLowerCase();}
   function byId(list){var m={};list.forEach(function(r){m[r.id]=r;});return m;}
   function ctx(){return {People:byId(data.People||[]),Films:byId(data.Films||[]),
-                         Releases:byId(data.Releases||[])};}
+                         Releases:byId(data.Releases||[]),Labels:byId(data.Labels||[])};}
 
   function toDateInput(v){
     if(v===null||v===undefined||v==='')return '';

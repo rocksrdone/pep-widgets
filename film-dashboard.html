@@ -132,7 +132,7 @@
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',scenes:'Scenes',
          avail:'SceneAvailability',credits:'Credits',people:'People',masters:'Masters',extras:'Extras'};
   var root=document.getElementById('root'),msg=document.getElementById('msg');
-  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],franchises=[],curTok=null;
+  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],franchises=[],labelsTbl=[],curTok=null;
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -158,6 +158,11 @@
     }
     var m=String(v).match(/\d{4}/);
     return m?m[0]:'';
+  }
+  function labelName(id){
+    for(var i=0;i<(labelsTbl||[]).length;i++)
+      if(labelsTbl[i].id===id)return labelsTbl[i].Name||'';
+    return '';
   }
   function stars(n){n=Number(n)||0;return '\u2605'.repeat(n)+'<span style="color:var(--line)">'+'\u2605'.repeat(5-n)+'</span>';}
   function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return[];});}
@@ -277,8 +282,9 @@
         else if(cb&&t)h.push('<div class="cover" data-rel="'+r.id+'" '+
           'style="background-image:url(\''+url(t,cb)+'\')"></div>');
         h.push('<div class="t">'+esc(r.Title_On_Release||'(untitled)')+'</div>');
-        h.push('<div class="sub">'+esc([r.Format,r.Country,r.Region_Code,r.Video_Standard,
-               r.Aspect_Ratio,(r.Runtime_Min?r.Runtime_Min+' min':'')].filter(Boolean).join(' \u00b7 '))+'</div>');
+        h.push('<div class="sub">'+esc([r.Format,labelName(r.Label),r.Country,r.Region_Code,
+               r.Video_Standard,r.Aspect_Ratio,
+               (r.Runtime_Min?r.Runtime_Min+' min':'')].filter(Boolean).join(' \u00b7 '))+'</div>');
         if(r.Video_Quality)h.push('<div class="qual">'+stars(r.Video_Quality)+'</div>');
         if(r.Cut_Status)h.push('<div class="sub" style="margin:4px 0 0">'+esc(r.Cut_Status)+
           (r.Cropping?' \u00b7 '+esc(r.Cropping):'')+'</div>');
@@ -413,7 +419,7 @@
     if(!r||!curTok)return;
     var f=att(r.Cover_Front),b=att(r.Cover_Back),extra=att(r.Disc_Art);
     var h=['<div class="pcard"><div class="phead"><div><h3>'+esc(r.Title_On_Release||'')+'</h3>'+
-      '<div class="paka">'+esc([r.Format,r.Label&&'',r.Country,r.Region_Code]
+      '<div class="paka">'+esc([r.Format,labelName(r.Label),r.Country,r.Region_Code]
         .filter(Boolean).join(' \u00b7 '))+'</div></div>'+
       '<button class="pclose">\u2715</button></div><div class="pbody"><div class="covers">'];
     [[f,'Front'],[b,'Back'],[extra,'Disc']].forEach(function(pair){
@@ -547,6 +553,7 @@
       films=await get(T.films);
       window.__films=films;
       franchises=await get('Franchises');
+      labelsTbl=await get('Labels');
       films.sort(function(a,b){
         return String(a.Original_Title||'').localeCompare(String(b.Original_Title||''));});
       cnt.textContent=films.length+' films';
