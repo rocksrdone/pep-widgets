@@ -139,6 +139,11 @@
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function listArr(v){
+    if(v==null)return [];
+    if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
+    return String(v)?[String(v)]:[];
+  }
   function listText(v){
     if(v==null)return '';
     if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).join(', ');
