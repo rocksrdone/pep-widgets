@@ -62,6 +62,7 @@
   .kindrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
   .kindrow .btn{font-size:11px}
   .empty{color:var(--muted);font-size:12px;padding:8px 0}
+  td.na{color:var(--muted);text-align:center}
   .note{font-size:11.5px;color:var(--muted);line-height:1.65;margin-top:7px}
   .note b{color:var(--fg)}
   .tag{font-size:10px;padding:1px 7px;border-radius:9px;background:var(--chip);
@@ -89,6 +90,8 @@
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',
          masters:'Masters',parts:'MasterParts',scenes:'Scenes',labels:'Labels'};
   var KINDS=['Video','Audio','Subtitle','Scene insert','Chapters','Other'];
+  var LANGS=['Italian','English','French','Spanish','German','Russian','Japanese',
+             'Portuguese','Latin','Greek','Other'];
   var HEALTH=['Finished','Good enough','Needs rework','Superseded','Abandoned'];
   var STATUS=['Sources gathering','Converting','Editing','Subtitling','Muxing','Mastered','Blocked'];
   var REWORK=['Better video source','Better English audio','Better subtitles','Missing scenes',
@@ -126,6 +129,7 @@
              .filter(Boolean).join(' \u00b7 ')+q+
            (r.Ownership&&r.Ownership!=='Owned'?' ('+r.Ownership.toLowerCase()+')':'');
   }
+  function needsLang(kind){return kind==='Audio'||kind==='Subtitle';}
   function listArr(v){
     if(v==null)return [];
     if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
@@ -245,7 +249,16 @@
         var cls=p.Part_Type==='Video'?'v':p.Part_Type==='Audio'?'a':'s';
         h.push('<tr data-id="'+p.id+'">');
         h.push('<td><span class="tag '+cls+'">'+esc(p.Part_Type||'')+'</span></td>');
-        h.push('<td><input data-f="Language" value="'+esc(p.Language||'')+'" placeholder="English"></td>');
+        if(needsLang(p.Part_Type)){
+          h.push('<td><select data-f="Language"><option value="">\u2014</option>'+
+            LANGS.map(function(L){return '<option'+(p.Language===L?' selected':'')+'>'+
+              esc(L)+'</option>';}).join('')+
+            (p.Language&&LANGS.indexOf(p.Language)<0
+              ? '<option selected>'+esc(p.Language)+'</option>':'')+
+            '</select></td>');
+        } else {
+          h.push('<td class="na">\u2014</td>');
+        }
         h.push('<td><select data-f="From_Release"><option value="">\u2014</option>'+
           rels.map(function(r){return '<option value="'+r.id+'"'+
             (p.From_Release===r.id?' selected':'')+'>'+esc(relOption(r))+'</option>';}).join('')+
