@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Build Log</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--bg:#fff;--fg:#1c1c1c;--muted:#6b7280;--line:#e3e3e6;--chip:#f3f4f6;--card:#fafafa;
+    --ok:#16b378;--bad:#d9534f;--warn:#e5a83b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  @media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#eaeaea;--muted:#9aa0a6;--line:#3a3a3a;
+    --chip:#2c2c2c;--card:#262626}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:9px 12px;
+    border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #q{flex:1;min-width:160px;max-width:340px;padding:6px 11px;border:1px solid var(--line);
+    border-radius:16px;background:var(--card);color:var(--fg);font:inherit;outline:none}
+  #q:focus{border-color:var(--ok)}
+  #hits{position:absolute;top:43px;left:12px;width:400px;max-height:280px;overflow:auto;z-index:30;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35);display:none}
+  #hits div{padding:6px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px}
+  #hits div:hover{background:var(--chip)}
+  #hits .s{color:var(--muted);font-size:11px}
+  #who{font-size:12px;color:var(--muted)}
+  #who b{color:var(--fg)}
+  #root{padding:12px;max-width:960px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    margin:18px 0 8px;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:3px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:5px 7px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{color:var(--muted);font-size:10.5px;font-weight:600}
+  select,input{width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:4px;
+    background:var(--card);color:var(--fg);font:inherit;font-size:11.5px}
+  select:focus,input:focus{outline:none;border-color:var(--ok)}
+  .btn{padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--chip);
+    color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  .btn:hover{border-color:var(--muted)}
+  .btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+  .btn.x{padding:3px 8px;color:var(--bad);border-color:var(--line)}
+  pre{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:9px 11px;
+    font-family:var(--mono);font-size:11px;overflow-x:auto;margin:7px 0;white-space:pre-wrap;
+    word-break:break-word}
+  .kindrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+  .kindrow .btn{font-size:11px}
+  .empty{color:var(--muted);font-size:12px;padding:8px 0}
+  .note{font-size:11.5px;color:var(--muted);line-height:1.65;margin-top:7px}
+  .note b{color:var(--fg)}
+  .tag{font-size:10px;padding:1px 7px;border-radius:9px;background:var(--chip);
+    border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .tag.v{background:var(--ok);border-color:var(--ok);color:#fff}
+  .tag.a{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  .tag.s{background:var(--chip)}
+  #status{font-size:12px;margin-top:8px}
+  #status.ok{color:var(--ok)} #status.bad{color:var(--bad)}
+  #msg{padding:36px;text-align:center;color:var(--muted);line-height:1.7}
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="q" placeholder="Find a master or a film&hellip;" autocomplete="off">
+  <span id="who"></span>
+  <div id="hits"></div>
+</div>
+<div id="msg">Search for a master above. If a film has no master row yet, pick the film and one will be made.</div>
+<div id="root" style="display:none"></div>
+
+<script>
+(function(){
+  "use strict";
+  var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',
+         masters:'Masters',parts:'MasterParts',scenes:'Scenes'};
+  var KINDS=['Video','Audio','Subtitle','Scene insert','Chapters','Other'];
+  var TREAT=['Untouched','Speed corrected PAL to NTSC','Speed corrected NTSC to PAL',
+             'Resynced by hand','OCR from image subs','Translated','Retimed','Re-encoded',
+             'Volume matched','Cut to fit'];
+  var D={},cur=null,suppress=0;
+  var root=document.getElementById('root'),msg=document.getElementById('msg'),
+      q=document.getElementById('q'),hits=document.getElementById('hits');
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
+    for(var i=0;i<n;i++){var r={};for(var j=0;j<k.length;j++)r[k[j]]=t[k[j]][i];o.push(r);}return o;}
+  function get(tbl){return grist.docApi.fetchTable(tbl).then(recs).catch(function(){return null;});}
+  function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  function byId(a,id){for(var i=0;i<(a||[]).length;i++)if(a[i].id===id)return a[i];return null;}
+  function filmOf(m){return byId(D.films,m&&m.Film)||{};}
+  function relName(id){var r=byId(D.rel,id);return r?(r.Title_On_Release||'release '+id):'';}
+  function partsOf(m){
+    return (D.parts||[]).filter(function(p){return p.Master===m.id;})
+      .sort(function(a,b){return (a.Order||0)-(b.Order||0);});
+  }
+
+  // ---- what the finished file is made of, in words --------------------------
+  function summary(m){
+    var ps=partsOf(m),f=filmOf(m),out=[];
+    out.push((f.Original_Title||'')+(f.Year?' ('+parseInt(f.Year,10)+')':''));
+    if(m.Version_Name)out.push(m.Version_Name);
+    out.push('');
+    KINDS.forEach(function(k){
+      var g=ps.filter(function(p){return p.Part_Type===k;});
+      if(!g.length)return;
+      out.push(k.toUpperCase());
+      g.forEach(function(p){
+        var bits=[];
+        if(p.Language)bits.push(p.Language);
+        if(p.From_Release)bits.push('from '+relName(p.From_Release));
+        if(p.Treatment&&p.Treatment!=='Untouched')bits.push(p.Treatment.toLowerCase());
+        if(p.Time_Range)bits.push('at '+p.Time_Range);
+        out.push('  - '+bits.join(', ')+(p.Notes?'  ('+p.Notes+')':''));
+      });
+      out.push('');
+    });
+    return out.join('\n').trim();
+  }
+
+  // ---- mkvmerge naming, so the file explains itself in Plex ------------------
+  function trackNames(m){
+    var ps=partsOf(m),lines=[],n=0;
+    ps.filter(function(p){return p.Part_Type==='Audio';}).forEach(function(p){
+      var nm=[p.Language,p.From_Release?relName(p.From_Release):'',
+              (p.Treatment&&p.Treatment!=='Untouched')?p.Treatment.toLowerCase():'']
+             .filter(Boolean).join(' - ');
+      lines.push('--track-name '+n+':"'+nm.replace(/"/g,'')+'"'+
+                 (p.Lang_Code?' --language '+n+':'+p.Lang_Code:''));
+      n++;
+    });
+    var sn=0;
+    ps.filter(function(p){return p.Part_Type==='Subtitle';}).forEach(function(p){
+      var nm=[p.Language,p.From_Release?relName(p.From_Release):'',
+              (p.Treatment&&p.Treatment!=='Untouched')?p.Treatment.toLowerCase():'']
+             .filter(Boolean).join(' - ');
+      lines.push('--track-name '+sn+':"'+nm.replace(/"/g,'')+'"'+
+                 (p.Lang_Code?' --language '+sn+':'+p.Lang_Code:''));
+      sn++;
+    });
+    return lines.join('\n');
+  }
+
+  // ---- a tags file mkvmerge can embed ---------------------------------------
+  function tagsXml(m){
+    var f=filmOf(m);
+    var body=summary(m).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n'+
+      '      <Name>TITLE</Name>\n      <String>'+esc(f.Original_Title||'')+
+      (f.Year?' ('+parseInt(f.Year,10)+')':'')+'</String>\n    </Simple>\n    <Simple>\n'+
+      '      <Name>COMMENT</Name>\n      <String>'+body+'</String>\n    </Simple>\n'+
+      '    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>'+
+      esc(m.Version_Name||'custom master')+'</String>\n    </Simple>\n  </Tag>\n</Tags>';
+  }
+
+  // ---- render ----------------------------------------------------------------
+  function render(){
+    if(!cur){msg.style.display='block';root.style.display='none';return;}
+    msg.style.display='none';root.style.display='block';
+    var f=filmOf(cur),ps=partsOf(cur);
+    var rels=(D.rel||[]).filter(function(r){return r.Film===cur.Film;});
+    var h=[];
+    h.push('<h2>What went into this master</h2>');
+    h.push('<div class="kindrow">'+KINDS.map(function(k){
+      return '<button class="btn" data-add="'+esc(k)+'">+ '+esc(k)+'</button>';}).join('')+'</div>');
+
+    if(!ps.length)h.push('<div class="empty">Nothing logged yet. Add the video source first, '+
+      'then each audio and subtitle track, then any scene you grafted in.</div>');
+    else{
+      h.push('<table><tr><th style="width:92px">Part</th><th style="width:110px">Language</th>'+
+        '<th>Taken from</th><th style="width:150px">What you did to it</th>'+
+        '<th style="width:96px">Where</th><th>Notes</th><th style="width:34px"></th></tr>');
+      ps.forEach(function(p){
+        var cls=p.Part_Type==='Video'?'v':p.Part_Type==='Audio'?'a':'s';
+        h.push('<tr data-id="'+p.id+'">');
+        h.push('<td><span class="tag '+cls+'">'+esc(p.Part_Type||'')+'</span></td>');
+        h.push('<td><input data-f="Language" value="'+esc(p.Language||'')+'" placeholder="English"></td>');
+        h.push('<td><select data-f="From_Release"><option value="">\u2014</option>'+
+          rels.map(function(r){return '<option value="'+r.id+'"'+
+            (p.From_Release===r.id?' selected':'')+'>'+esc(r.Title_On_Release||'')+'</option>';}).join('')+
+          '</select></td>');
+        h.push('<td><select data-f="Treatment"><option value="">\u2014</option>'+
+          TREAT.map(function(t){return '<option'+(p.Treatment===t?' selected':'')+'>'+
+            esc(t)+'</option>';}).join('')+'</select></td>');
+        h.push('<td><input data-f="Time_Range" value="'+esc(p.Time_Range||'')+
+          '" placeholder="whole film"></td>');
+        h.push('<td><input data-f="Notes" value="'+esc(p.Notes||'')+'"></td>');
+        h.push('<td><button class="btn x" data-del="'+p.id+'">\u2715</button></td></tr>');
+      });
+      h.push('</table>');
+    }
+    h.push('<div id="status"></div>');
+
+    if(ps.length){
+      h.push('<h2>The story of this file</h2>');
+      h.push('<pre id="sum">'+esc(summary(cur))+'</pre>');
+      h.push('<button class="btn" data-copy="sum">Copy</button> '+
+        '<button class="btn" id="tonotes">Write it to the master row</button>');
+      h.push('<div class="note">Keep a copy of this as <b>build notes.txt</b> in the film\u2019s '+
+        'x-Archive folder. In three years it is the only thing that will tell you why the '+
+        'English track drifts after the reel change.</div>');
+
+      h.push('<h2>Track names for mkvmerge</h2>');
+      h.push('<pre id="tn">'+esc(trackNames(cur)||'Add some audio or subtitle parts first.')+'</pre>');
+      h.push('<button class="btn" data-copy="tn">Copy</button>');
+      h.push('<div class="note">Naming the tracks is what makes the file self-explanatory. Plex '+
+        'shows these names in its audio and subtitle menus, so you can tell the Alpha dub from '+
+        'the Surf Video one without opening anything.</div>');
+
+      h.push('<h2>Tags to embed in the MKV</h2>');
+      h.push('<pre id="tx">'+esc(tagsXml(cur))+'</pre>');
+      h.push('<button class="btn" data-copy="tx">Copy</button>');
+      h.push('<div class="note">Save as <b>tags.xml</b> beside the file, then add '+
+        '<code>--global-tags tags.xml</code> to your mkvmerge command. The whole build log '+
+        'travels inside the MKV, so it survives even if the folder does not.</div>');
+    }
+    root.innerHTML=h.join('');
+    bind();
+  }
+
+  function bind(){
+    Array.prototype.forEach.call(root.querySelectorAll('[data-add]'),function(b){
+      b.onclick=function(){addPart(b.getAttribute('data-add'));};
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-del]'),function(b){
+      b.onclick=function(){delPart(Number(b.getAttribute('data-del')));};
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('tr[data-id]'),function(tr){
+      var id=Number(tr.getAttribute('data-id'));
+      Array.prototype.forEach.call(tr.querySelectorAll('[data-f]'),function(el){
+        el.onchange=function(){
+          var f={},k=el.getAttribute('data-f');
+          f[k]=(k==='From_Release')?(el.value?Number(el.value):0):el.value;
+          save(id,f);
+        };
+      });
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-copy]'),function(b){
+      b.onclick=function(){
+        navigator.clipboard.writeText(document.getElementById(b.getAttribute('data-copy')).textContent);
+        b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1300);
+      };
+    });
+    var tn=document.getElementById('tonotes');
+    if(tn)tn.onclick=async function(){
+      try{
+        await grist.docApi.applyUserActions([['UpdateRecord',T.masters,cur.id,
+          {Build_Log:summary(cur)}]]);
+        this.textContent='Written';
+      }catch(e){
+        document.getElementById('status').className='bad';
+        document.getElementById('status').textContent=
+          'Could not write \u2014 add a Build_Log text column to Masters.';
+      }
+    };
+  }
+
+  async function addPart(kind){
+    var n=partsOf(cur).length;
+    try{
+      await grist.docApi.applyUserActions([['AddRecord',T.parts,null,
+        {Master:cur.id,Part_Type:kind,Order:(n+1)*10}]]);
+      D.parts=await get(T.parts);render();
+    }catch(e){
+      document.getElementById('status').className='bad';
+      document.getElementById('status').innerHTML=
+        'Could not add \u2014 create the <b>MasterParts</b> table first. '+String(e&&e.message||e);
+    }
+  }
+  async function delPart(id){
+    try{
+      await grist.docApi.applyUserActions([['RemoveRecord',T.parts,id]]);
+      D.parts=await get(T.parts);render();
+    }catch(e){}
+  }
+  async function save(id,fields){
+    try{
+      await grist.docApi.applyUserActions([['UpdateRecord',T.parts,id,fields]]);
+      D.parts=await get(T.parts);
+      var st=document.getElementById('status');
+      if(st){st.className='ok';st.textContent='Saved.';}
+      var s=document.getElementById('sum');if(s)s.textContent=summary(cur);
+      var t=document.getElementById('tn');if(t)t.textContent=trackNames(cur);
+      var x=document.getElementById('tx');if(x)x.textContent=tagsXml(cur);
+    }catch(e){
+      var st2=document.getElementById('status');
+      if(st2){st2.className='bad';st2.textContent=String(e&&e.message||e);}
+    }
+  }
+
+  // ---- picker ----------------------------------------------------------------
+  q.addEventListener('input',function(){
+    var s=norm(this.value.trim());
+    if(s.length<2){hits.style.display='none';return;}
+    var list=[];
+    (D.masters||[]).forEach(function(m){
+      var f=filmOf(m);
+      if(norm([f.Original_Title,f.English_Title,m.Version_Name].join(' ')).indexOf(s)>=0)
+        list.push({m:m,f:f});
+    });
+    (D.films||[]).forEach(function(f){
+      if((D.masters||[]).some(function(m){return m.Film===f.id;}))return;
+      if(norm([f.Original_Title,f.English_Title].join(' ')).indexOf(s)>=0)
+        list.push({m:null,f:f});
+    });
+    if(!list.length){hits.style.display='none';return;}
+    hits.innerHTML=list.slice(0,20).map(function(x,i){
+      return '<div data-i="'+i+'"><b>'+esc(x.f.Original_Title||'')+
+        (x.f.Year?' ('+parseInt(x.f.Year,10)+')':'')+'</b><div class="s">'+
+        (x.m?esc(x.m.Version_Name||'master'):'no master row yet \u2014 one will be created')+
+        '</div></div>';}).join('');
+    hits.style.display='block';
+    Array.prototype.forEach.call(hits.children,function(d){
+      d.onmousedown=async function(e){
+        e.preventDefault();
+        var x=list[Number(d.getAttribute('data-i'))];
+        hits.style.display='none';q.value='';
+        if(!x.m){
+          try{
+            var r=await grist.docApi.applyUserActions([['AddRecord',T.masters,null,
+              {Film:x.f.id,Version_Name:'Custom master',Status:'Editing'}]]);
+            D.masters=await get(T.masters);
+            x.m=byId(D.masters,r&&r.retValues&&r.retValues[0]);
+          }catch(err){}
+        }
+        cur=x.m;
+        if(cur){
+          suppress=Date.now();
+          try{grist.setCursorPos({rowId:cur.id});}catch(err){}
+          document.getElementById('who').innerHTML='<b>'+esc(x.f.Original_Title||'')+'</b> \u00b7 '+
+            esc(cur.Version_Name||'master');
+        }
+        render();
+      };
+    });
+  });
+  q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
+
+  grist.ready({requiredAccess:'full',allowSelectBy:true});
+  grist.onRecord(function(rec){
+    if(Date.now()-suppress<1200)return;
+    if(rec&&rec.Version_Name!==undefined){cur=rec;render();}
+  });
+  (async function(){
+    D.films=await get(T.films);D.rel=await get(T.rel);
+    D.masters=await get(T.masters);D.parts=await get(T.parts)||[];
+    D.aud=await get(T.aud);D.sub=await get(T.sub);
+    if(D.parts===null)msg.innerHTML='Create a <b>MasterParts</b> table first \u2014 the setup '+
+      'notes list its columns.';
+  })();
+})();
+</script>
+</body>
+</html>
