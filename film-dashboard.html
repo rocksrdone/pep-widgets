@@ -142,7 +142,15 @@
   function listArr(v){
     if(v==null)return [];
     if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
-    return String(v)?[String(v)]:[];
+    var t=String(v);
+    if(!t)return [];
+    // a value left over from when the column was a plain Choice: "['One', 'Two']"
+    if(/^\[.*\]$/.test(t.trim())){
+      return t.trim().slice(1,-1).split(',')
+        .map(function(x){return x.trim().replace(/^['"]|['"]$/g,'');})
+        .filter(Boolean);
+    }
+    return [t];
   }
   function listText(v){
     if(v==null)return '';
