@@ -44,6 +44,8 @@
   pre{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:9px 11px;
     font-family:var(--mono);font-size:11px;overflow-x:auto;margin:7px 0;white-space:pre-wrap;
     word-break:break-word}
+  .warn2{border:1px solid var(--warn);background:rgba(229,168,59,.12);border-radius:6px;
+    padding:8px 10px;font-size:11.5px;line-height:1.6;margin-bottom:12px}
   .health{border:1px solid var(--line);border-radius:7px;padding:11px 12px;background:var(--card);
     margin-bottom:14px}
   .health label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
@@ -214,6 +216,14 @@
       '<input data-m="Rework_Notes" value="'+esc(cur.Rework_Notes||'')+
       '" placeholder="English dub drifts after the reel 3 change"></div>'+
       '<div id="hstatus"></div></div>');
+    var vpart=partsOf(cur).filter(function(p){return p.Part_Type==='Video'&&p.From_Release;})[0];
+    if(vpart&&cur.Video_Source!==vpart.From_Release)
+      h.push('<div class="warn2">The master row still points at a different video source. '+
+        'Re-pick the release on the Video row below and it will be corrected.</div>');
+    else if(!vpart)
+      h.push('<div class="warn2">No <b>Video</b> part logged yet. Add one and pick the release '+
+        'it comes from \u2014 that also sets Video_Source on the master, which the build '+
+        'checklist reads.</div>');
     h.push('<h2>What went into this master</h2>');
     h.push('<div class="kindrow">'+KINDS.map(function(k){
       return '<button class="btn" data-add="'+esc(k)+'">+ '+esc(k)+'</button>';}).join('')+'</div>');
@@ -359,6 +369,18 @@
   async function save(id,fields){
     try{
       await grist.docApi.applyUserActions([['UpdateRecord',T.parts,id,fields]]);
+      // keep Masters.Video_Source in step with the Video part
+      if('From_Release' in fields){
+        var p=byId(D.parts,id);
+        if(p&&p.Part_Type==='Video'&&fields.From_Release){
+          try{
+            await grist.docApi.applyUserActions([['UpdateRecord',T.masters,cur.id,
+              {Video_Source:fields.From_Release}]]);
+            cur.Video_Source=fields.From_Release;
+            D.masters=await get(T.masters);
+          }catch(e2){}
+        }
+      }
       D.parts=await get(T.parts);
       var st=document.getElementById('status');
       if(st){st.className='ok';st.textContent='Saved.';}
