@@ -289,28 +289,36 @@
   }
 
   // ---- picker ----------------------------------------------------------------
-  q.addEventListener('input',function(){
-    var s=norm(this.value.trim());
-    if(s.length<2){hits.style.display='none';return;}
-    var list=[];
+  function pickList(){
+    var s=norm(q.value.trim()),out=[];
     (D.masters||[]).forEach(function(m){
       var f=filmOf(m);
-      if(norm([f.Original_Title,f.English_Title,m.Version_Name].join(' ')).indexOf(s)>=0)
-        list.push({m:m,f:f});
+      if(!s||norm([f.Original_Title,f.English_Title,m.Version_Name].join(' ')).indexOf(s)>=0)
+        out.push({m:m,f:f});
     });
     (D.films||[]).forEach(function(f){
       if((D.masters||[]).some(function(m){return m.Film===f.id;}))return;
-      if(norm([f.Original_Title,f.English_Title].join(' ')).indexOf(s)>=0)
-        list.push({m:null,f:f});
+      if(!s||norm([f.Original_Title,f.English_Title].join(' ')).indexOf(s)>=0)
+        out.push({m:null,f:f});
     });
-    if(!list.length){hits.style.display='none';return;}
-    hits.innerHTML=list.slice(0,20).map(function(x,i){
-      return '<div data-i="'+i+'"><b>'+esc(x.f.Original_Title||'')+
+    out.sort(function(a,b){
+      return String(a.f.Original_Title||'').localeCompare(String(b.f.Original_Title||''));});
+    return out;
+  }
+  function drawHits(){
+    var list=pickList();
+    if(!list.length){
+      hits.innerHTML='<div style="color:var(--muted)">No films yet \u2014 add one first.</div>';
+      hits.style.display='block';return;
+    }
+    hits.innerHTML=list.slice(0,60).map(function(x,i){
+      return '<div data-i="'+i+'"><b>'+esc(x.f.Original_Title||'(untitled)')+
         (x.f.Year?' ('+parseInt(x.f.Year,10)+')':'')+'</b><div class="s">'+
-        (x.m?esc(x.m.Version_Name||'master'):'no master row yet \u2014 one will be created')+
+        (x.m?esc(x.m.Version_Name||'master'):'no master yet \u2014 one will be created')+
         '</div></div>';}).join('');
     hits.style.display='block';
     Array.prototype.forEach.call(hits.children,function(d){
+      if(!d.hasAttribute('data-i'))return;
       d.onmousedown=async function(e){
         e.preventDefault();
         var x=list[Number(d.getAttribute('data-i'))];
@@ -321,7 +329,10 @@
               {Film:x.f.id,Version_Name:'Custom master',Status:'Editing'}]]);
             D.masters=await get(T.masters);
             x.m=byId(D.masters,r&&r.retValues&&r.retValues[0]);
-          }catch(err){}
+          }catch(err){
+            msg.innerHTML='Could not create a master row: '+esc(String(err&&err.message||err));
+            return;
+          }
         }
         cur=x.m;
         if(cur){
@@ -333,7 +344,9 @@
         render();
       };
     });
-  });
+  }
+  q.addEventListener('focus',drawHits);
+  q.addEventListener('input',drawHits);
   q.addEventListener('blur',function(){setTimeout(function(){hits.style.display='none';},150);});
 
   grist.ready({requiredAccess:'full',allowSelectBy:true});
@@ -343,10 +356,15 @@
   });
   (async function(){
     D.films=await get(T.films);D.rel=await get(T.rel);
-    D.masters=await get(T.masters);D.parts=await get(T.parts)||[];
+    D.masters=await get(T.masters);
+    var p=await get(T.parts);
+    if(p===null){
+      msg.innerHTML='<b>No MasterParts table found.</b><br>Create it before using this widget '+
+        '\u2014 the setup notes list its columns. You can still pick a master, but adding parts '+
+        'will fail.';
+      D.parts=[];
+    } else D.parts=p;
     D.aud=await get(T.aud);D.sub=await get(T.sub);
-    if(D.parts===null)msg.innerHTML='Create a <b>MasterParts</b> table first \u2014 the setup '+
-      'notes list its columns.';
   })();
 })();
 </script>
