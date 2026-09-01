@@ -49,6 +49,15 @@
   .badge.ok{background:var(--ok);border-color:var(--ok);color:#fff}
   .badge.bad{background:var(--bad);border-color:var(--bad);color:#fff}
   .badge.warn{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  .folders{margin:0 0 14px}
+  .frow{display:flex;gap:9px;align-items:center;padding:3px 0;flex-wrap:wrap}
+  .frow .fk{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
+    min-width:96px}
+  .frow code{background:var(--chip);padding:3px 8px;border-radius:4px;font-size:11px;
+    font-family:var(--mono);word-break:break-all}
+  .mini{border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:12px;
+    padding:3px 10px;font:inherit;font-size:10.5px;cursor:pointer;text-decoration:none}
+  .mini:hover{border-color:var(--muted)}
   .covers{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
   .cv{width:74px;height:104px;border-radius:4px;border:1px solid var(--line);
     background:var(--chip) center/contain no-repeat;cursor:zoom-in;position:relative}
@@ -132,6 +141,16 @@
     return l&&l.Name||'';}
   function stars(n){n=Number(n)||0;
     return n?'\u2605'.repeat(n)+'<span style="color:var(--line)">'+'\u2605'.repeat(5-n)+'</span>':'';}
+  function clean(x){
+    return String(x||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/['\u2019]/g,' ').replace(/[,\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+  }
+  function relFolder(r){
+    var f=film(r);
+    var head=clean(f.Original_Title)+(f.Year?' ('+parseInt(f.Year,10)+')':'');
+    var bits=[head,r.Format,clean(labelOf(r)),r.Country,r.Region_Code];
+    return bits.filter(Boolean).join(' ');
+  }
   function sp(k,v,dim){return '<div class="sp"><div class="k">'+esc(k)+'</div><div class="v'+
     (dim?' n':'')+'">'+(v===''||v==null?'\u2014':esc(v))+'</div></div>';}
 
@@ -224,6 +243,21 @@
       /cut/i.test(r.Cut_Status)?'bad':'')+'">'+esc(r.Cut_Status)+'</span>');
     h.push('<span class="badge '+(r.Ripped?'ok':'')+'">'+(r.Ripped?'ripped':'not ripped')+'</span>');
     if(r.Untouched_Rip)h.push('<span class="badge">untouched rip</span>');
+    h.push('</div>');
+
+    var f2=film(r);
+    h.push('<div class="folders">');
+    if(f2.Folder_Name)
+      h.push('<div class="frow"><span class="fk">Film folder</span>'+
+        '<code id="ff1">'+esc(f2.Folder_Name)+'</code>'+
+        '<button class="mini" data-cp="ff1">copy</button></div>');
+    h.push('<div class="frow"><span class="fk">Release folder</span>'+
+      '<code id="ff2">'+esc(relFolder(r))+'</code>'+
+      '<button class="mini" data-cp="ff2">copy</button></div>');
+    h.push('<div class="frow"><span class="fk">Full path</span>'+
+      '<code id="ff3">'+esc((f2.Folder_Name?f2.Folder_Name+'/':'')+'Untouched Releases/'+
+        relFolder(r))+'</code>'+
+      '<button class="mini" data-cp="ff3">copy</button></div>');
     h.push('</div>');
 
     // artwork
@@ -371,6 +405,12 @@
     if(r.Notes)h.push('<h2>Notes</h2><div class="note">'+esc(r.Notes).replace(/\n/g,'<br>')+'</div>');
 
     p.innerHTML=h.join('');
+    Array.prototype.forEach.call(p.querySelectorAll('[data-cp]'),function(b){
+      b.onclick=function(){
+        navigator.clipboard.writeText(document.getElementById(b.getAttribute('data-cp')).textContent);
+        b.textContent='copied';setTimeout(function(){b.textContent='copy';},1300);
+      };
+    });
     Array.prototype.forEach.call(p.querySelectorAll('[data-img]'),function(el){
       el.onclick=function(){
         box.querySelector('img').src=el.getAttribute('data-img');
