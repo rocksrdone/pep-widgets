@@ -72,7 +72,7 @@
 (function(){
   "use strict";
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',
-         masters:'Masters',parts:'MasterParts',scenes:'Scenes'};
+         masters:'Masters',parts:'MasterParts',scenes:'Scenes',labels:'Labels'};
   var KINDS=['Video','Audio','Subtitle','Scene insert','Chapters','Other'];
   var TREAT=['Untouched','Speed corrected PAL to NTSC','Speed corrected NTSC to PAL',
              'Resynced by hand','OCR from image subs','Translated','Retimed','Re-encoded',
@@ -89,7 +89,23 @@
   function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
   function byId(a,id){for(var i=0;i<(a||[]).length;i++)if(a[i].id===id)return a[i];return null;}
   function filmOf(m){return byId(D.films,m&&m.Film)||{};}
-  function relName(id){var r=byId(D.rel,id);return r?(r.Title_On_Release||'release '+id):'';}
+  function labelName(id){
+    var l=byId(D.labels,id);return (l&&l.Name)||'';
+  }
+  // short form for the dropdown and the generated text
+  function relName(id){
+    var r=byId(D.rel,id);
+    if(!r)return '';
+    return [r.Title_On_Release||('release '+id),labelName(r.Label),r.Format,r.Country,
+            r.Region_Code].filter(Boolean).join(' ');
+  }
+  // fuller form with quality and ownership, for the picker
+  function relOption(r){
+    var q=r.Video_Quality?' \u2605'+r.Video_Quality:'';
+    return [r.Title_On_Release||'',labelName(r.Label),r.Format,r.Country,r.Region_Code]
+             .filter(Boolean).join(' \u00b7 ')+q+
+           (r.Ownership&&r.Ownership!=='Owned'?' ('+r.Ownership.toLowerCase()+')':'');
+  }
   function partsOf(m){
     return (D.parts||[]).filter(function(p){return p.Master===m.id;})
       .sort(function(a,b){return (a.Order||0)-(b.Order||0);});
@@ -168,7 +184,7 @@
       'then each audio and subtitle track, then any scene you grafted in.</div>');
     else{
       h.push('<table><tr><th style="width:92px">Part</th><th style="width:110px">Language</th>'+
-        '<th>Taken from</th><th style="width:150px">What you did to it</th>'+
+        '<th style="min-width:220px">Taken from</th><th style="width:150px">What you did to it</th>'+
         '<th style="width:96px">Where</th><th>Notes</th><th style="width:34px"></th></tr>');
       ps.forEach(function(p){
         var cls=p.Part_Type==='Video'?'v':p.Part_Type==='Audio'?'a':'s';
@@ -177,7 +193,7 @@
         h.push('<td><input data-f="Language" value="'+esc(p.Language||'')+'" placeholder="English"></td>');
         h.push('<td><select data-f="From_Release"><option value="">\u2014</option>'+
           rels.map(function(r){return '<option value="'+r.id+'"'+
-            (p.From_Release===r.id?' selected':'')+'>'+esc(r.Title_On_Release||'')+'</option>';}).join('')+
+            (p.From_Release===r.id?' selected':'')+'>'+esc(relOption(r))+'</option>';}).join('')+
           '</select></td>');
         h.push('<td><select data-f="Treatment"><option value="">\u2014</option>'+
           TREAT.map(function(t){return '<option'+(p.Treatment===t?' selected':'')+'>'+
@@ -355,7 +371,7 @@
     if(rec&&rec.Version_Name!==undefined){cur=rec;render();}
   });
   (async function(){
-    D.films=await get(T.films);D.rel=await get(T.rel);
+    D.films=await get(T.films);D.rel=await get(T.rel);D.labels=await get(T.labels)||[];
     D.masters=await get(T.masters);
     var p=await get(T.parts);
     if(p===null){
