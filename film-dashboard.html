@@ -56,6 +56,17 @@
   .folder code{background:var(--chip);padding:3px 8px;border-radius:4px;font-size:11px;
     font-family:ui-monospace,Menlo,Consolas,monospace}
   .chip.rw{background:var(--bad);border-color:var(--bad);color:#fff}
+  .chip.w{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  table.parts{width:100%;border-collapse:collapse;margin:8px 0 4px;font-size:11.5px}
+  table.parts td{padding:3px 7px 3px 0;vertical-align:top;border:0}
+  table.parts .pk{color:var(--muted);text-transform:uppercase;font-size:10px;
+    letter-spacing:.04em;white-space:nowrap;width:74px;padding-top:5px}
+  table.parts .pl{font-weight:600;white-space:nowrap;width:66px}
+  table.parts .ps{color:var(--fg)}
+  table.parts .pt{text-align:right;white-space:nowrap}
+  table.parts .pn{color:var(--muted);font-size:11px;padding-bottom:5px}
+  table.parts .tr{color:var(--muted)}
+  table.parts .none{color:var(--muted);font-style:italic}
   .note.warn{border-left:3px solid var(--warn);padding-left:8px}
   .cover{float:right;width:56px;height:78px;margin:0 0 6px 9px;border-radius:3px;
     border:1px solid var(--line);background:var(--chip) center/contain no-repeat;cursor:zoom-in}
@@ -360,21 +371,37 @@
       if(m.Filesize_GB)line.push(m.Filesize_GB+' GB');
       if(line.length)h.push('<div class="sub">'+esc(line.join(' \u00b7 '))+'</div>');
 
-      // what the parts are made of, one line each
+      // exactly what each part is, and where it came from
       if(parts.length){
-        var byKind={};
-        parts.forEach(function(p){(byKind[p.Part_Type]=byKind[p.Part_Type]||[]).push(p);});
-        h.push('<div class="chips" style="margin-top:6px">');
-        ['Audio','Subtitle','Scene insert'].forEach(function(k){
-          (byKind[k]||[]).forEach(function(p){
-            var weak=p.Treatment&&/re-encoded|translated|resynced/i.test(p.Treatment);
-            h.push('<span class="chip'+(k==='Audio'?' a':'')+'" title="'+
-              esc([p.Treatment,p.Notes].filter(Boolean).join(' \u2014 '))+'">'+
-              esc((k==='Scene insert'?'scene':p.Language||k))+
-              (weak?' \u00b7 '+esc(String(p.Treatment).toLowerCase()):'')+'</span>');
+        var relById={};rel.forEach(function(r){relById[r.id]=r;});
+        var srcName=function(id){
+          var r=relById[id];
+          if(!r)return '';
+          return [r.Title_On_Release||'',labelName(r.Label),r.Format,r.Country,r.Region_Code]
+                 .filter(Boolean).join(' \u00b7 ');
+        };
+        var ORDER=['Video','Audio','Subtitle','Scene insert','Chapters','Other'];
+        var seen={};
+        h.push('<table class="parts">');
+        ORDER.concat(parts.map(function(p){return p.Part_Type;})).forEach(function(k){
+          if(!k||seen[k])return;
+          seen[k]=1;
+          var g=parts.filter(function(p){return p.Part_Type===k;});
+          if(!g.length)return;
+          g.forEach(function(p,i){
+            var treat=(p.Treatment&&p.Treatment!=='Untouched')?p.Treatment:'';
+            h.push('<tr><td class="pk">'+(i===0?esc(k):'')+'</td>'+
+              '<td class="pl">'+esc(p.Language||'')+'</td>'+
+              '<td class="ps">'+(p.From_Release?esc(srcName(p.From_Release))
+                :'<span class="none">no source recorded</span>')+
+              (p.Time_Range&&p.Time_Range!=='whole film'
+                ? ' <span class="tr">'+esc(p.Time_Range)+'</span>':'')+'</td>'+
+              '<td class="pt">'+(treat?'<span class="chip w">'+esc(treat)+'</span>':'')+'</td></tr>');
+            if(p.Notes)h.push('<tr><td></td><td></td><td colspan="2" class="pn">'+
+              esc(p.Notes)+'</td></tr>');
           });
         });
-        h.push('</div>');
+        h.push('</table>');
       }
 
       if(m.Source_Checklist)
