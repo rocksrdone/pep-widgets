@@ -92,7 +92,19 @@
     ptype:['Actor','Director','Writer','Composer','Dub voice','Crew'],
     ctype:['Actor','Director','Writer','Cinematographer','Composer','Producer','Dub voice','Stunt','Other'],
     conf:['Confirmed','Probable','Guess','Disputed'],
-    idfrom:['Print credits','Research','Screenshot','Dub credits','Guess']
+    idfrom:['Print credits','Research','Screenshot','Dub credits','Guess'],
+    scan:['Progressive','Interlaced','Mixed','Unknown'],
+    field:['n/a','Top Field First','Bottom Field First'],
+    storage:['Anamorphic','Letterboxed 4:3','Open matte 4:3','Pillarboxed in 16:9',
+             'Windowboxed','Fills the frame','Unknown'],
+    prov:['Own disc rip','Own capture','Trusted rip','Unverified download',
+          'Streaming capture','Unknown'],
+    atype:['Original','Dub','Fandub','Commentary','Isolated score'],
+    stype:['Full','SDH','Forced','Songs only','Fan'],
+    sfmt:['VobSub','PGS','SRT','ASS','Burned-in','CC'],
+    ssrc:['Official','OCR','Fan','Machine translation'],
+    lang:['Italian','English','French','Spanish','German','Russian','Japanese',
+          'Portuguese','Other']
   };
 
   var SCHEMA={
@@ -107,11 +119,14 @@
        {id:'Branch',t:'choice',o:'branch'},{id:'Setting_Era',t:'choice',o:'era'},
        {id:'Mode',t:'choice',o:'mode'},{id:'Work_Type',t:'choice',o:'work'},
        {id:'Franchise',t:'ref',ref:'Franchises',show:'Name'},
-       {id:'Reference_Runtime_Min',t:'num'},
+       {id:'Series_Name',t:'text'},{id:'Season_Episode',t:'text'},
+       {id:'Reference_Runtime_Min',t:'num'},{id:'Longest_Known_Runtime_Min',t:'num'},
        {id:'Priority',t:'choice',o:'prio'},
        {id:'Research_Status',t:'choice',o:'research'},{id:'Master_Status',t:'choice',o:'master'},
        {id:'Adult',t:'bool'},
        {id:'IMDb_URL',t:'text',wide:1},{id:'Reference_URL',t:'text',wide:1},
+       {id:'Other_Links',t:'text',wide:1},
+       {id:'Content_Notes',t:'area',wide:1},
        {id:'Best_Version_Notes',t:'area',wide:1},{id:'Notes',t:'area',wide:1}]},
 
     Releases:{ label:'Releases', title:function(r){return r.Title_On_Release||'(untitled)';},
@@ -126,11 +141,48 @@
        {id:'Resolution',t:'text'},{id:'Runtime_Min',t:'num'},
        {id:'Cut_Status',t:'choice',o:'cut'},{id:'Cropping',t:'text'},
        {id:'Video_Quality',t:'num'},{id:'Anamorphic',t:'bool'},
+       {id:'Storage_Type',t:'choice',o:'storage'},
+       {id:'Video_Codec',t:'text'},{id:'Video_Bitrate',t:'num'},
+       {id:'Frame_Rate',t:'text'},{id:'Scan_Type',t:'choice',o:'scan'},
+       {id:'Field_Order',t:'choice',o:'field'},{id:'Container',t:'text'},
+       {id:'File_Size_GB',t:'num'},{id:'Bits_Per_Pixel',t:'num'},
+       {id:'Chapters',t:'num'},
+       {id:'Provenance',t:'choice',o:'prov'},{id:'Same_Master_As',t:'ref',ref:'Releases',
+        show:'Title_On_Release',wide:1},
        {id:'Ownership',t:'choice',o:'own'},{id:'Physical_Location',t:'text'},
-       {id:'Purchase_Price',t:'num'},{id:'Store_URL',t:'text',wide:1},
+       {id:'Purchase_Date',t:'date'},{id:'Purchase_Price',t:'num'},
+       {id:'Purchase_Source',t:'text'},{id:'Store_URL',t:'text',wide:1},
        {id:'Ripped',t:'bool'},{id:'Untouched_Rip',t:'bool'},{id:'Rip_Path',t:'text',wide:1},
        {id:'Print_Notes',t:'area',wide:1},{id:'Comparison_Notes',t:'area',wide:1},
        {id:'Notes',t:'area',wide:1}]},
+
+    AudioTracks:{ label:'Audio',
+      title:function(r,ctx){var rl=ctx.Releases[r.Release];
+        return (r.Language||'?')+' \u00b7 '+((rl&&rl.Title_On_Release)||'no release');},
+      sub:function(r){return [r.Track_Type,r.Codec,r.Channels,
+        r.Bitrate?r.Bitrate+' kb/s':''].filter(Boolean).join(' \u00b7 ');},
+      search:['Language','Track_Type','Codec'],
+      searchRef:[['Release','Releases','Title_On_Release']],
+      fields:[
+       {id:'Release',t:'ref',ref:'Releases',show:'Title_On_Release',wide:1},
+       {id:'Language',t:'choice',o:'lang'},{id:'Track_Type',t:'choice',o:'atype'},
+       {id:'Channels',t:'text'},{id:'Codec',t:'text'},{id:'Bitrate',t:'num'},
+       {id:'Quality',t:'num'},{id:'Use_In_Master',t:'bool'},{id:'Extracted',t:'bool'},
+       {id:'File_Path',t:'text',wide:1},
+       {id:'Sync_Notes',t:'area',wide:1},{id:'Notes',t:'area',wide:1}]},
+
+    SubtitleTracks:{ label:'Subs',
+      title:function(r,ctx){var rl=ctx.Releases[r.Release];
+        return (r.Language||'?')+' \u00b7 '+((rl&&rl.Title_On_Release)||'no release');},
+      sub:function(r){return [r.Sub_Type,r.Format,r.Source].filter(Boolean).join(' \u00b7 ');},
+      search:['Language','Sub_Type','Format'],
+      searchRef:[['Release','Releases','Title_On_Release']],
+      fields:[
+       {id:'Release',t:'ref',ref:'Releases',show:'Title_On_Release',wide:1},
+       {id:'Language',t:'choice',o:'lang'},{id:'Sub_Type',t:'choice',o:'stype'},
+       {id:'Format',t:'choice',o:'sfmt'},{id:'Source',t:'choice',o:'ssrc'},
+       {id:'OCR_Done',t:'bool'},{id:'Use_In_Master',t:'bool'},
+       {id:'File_Path',t:'text',wide:1},{id:'Notes',t:'area',wide:1}]},
 
     People:{ label:'People', title:function(r){return r.Credited_Name||'(unnamed)';},
       sub:function(r){return [r.Real_Name,r.Aliases,r.Nationality].filter(Boolean).join(' \u00b7 ');},
@@ -162,7 +214,7 @@
        {id:'Screen_Time_Notes',t:'text',wide:1},{id:'Notes',t:'area',wide:1}]}
   };
 
-  var TABLES=['Films','Releases','People','Credits'];
+  var TABLES=['Films','Releases','AudioTracks','SubtitleTracks','People','Credits'];
   var data={},cur=null,curTable='Films',original={},edits={},hi=-1,suppress=0;
 
   var root=document.getElementById('root'),msg=document.getElementById('msg'),
@@ -187,7 +239,8 @@
   function norm(s){return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
     .toLowerCase();}
   function byId(list){var m={};list.forEach(function(r){m[r.id]=r;});return m;}
-  function ctx(){return {People:byId(data.People||[]),Films:byId(data.Films||[])};}
+  function ctx(){return {People:byId(data.People||[]),Films:byId(data.Films||[]),
+                         Releases:byId(data.Releases||[])};}
 
   function toDateInput(v){
     if(v===null||v===undefined||v==='')return '';
@@ -364,6 +417,14 @@
       else payload[f.id]=(v==='')?null:v;
     });
     if(!Object.keys(payload).length){st.textContent='Nothing changed.';return;}
+    var known=Object.keys(cur||{}),skipped=[];
+    Object.keys(payload).forEach(function(k){
+      if(known.indexOf(k)<0){skipped.push(k);delete payload[k];}
+    });
+    if(!Object.keys(payload).length){
+      st.className='bad';
+      st.textContent='None of those columns exist here: '+skipped.join(', ');return;
+    }
     st.className='';st.textContent='Saving\u2026';
     try{
       await grist.docApi.applyUserActions([['UpdateRecord',curTable,cur.id,payload]]);
@@ -373,7 +434,9 @@
       for(var i=0;i<data[curTable].length;i++){if(data[curTable][i].id===id){cur=data[curTable][i];break;}}
       edits={};render();
       document.getElementById('status').className='ok';
-      document.getElementById('status').textContent='Saved.';
+      document.getElementById('status').innerHTML='Saved.'+
+        (skipped.length?' <span style="color:var(--warn)">Skipped '+skipped.join(', ')+
+         ' \u2014 no such column.</span>':'');
     }catch(err){st.className='bad';st.textContent='Failed: '+(err&&err.message||err);}
   }
 
