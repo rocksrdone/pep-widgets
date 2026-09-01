@@ -55,6 +55,8 @@
   .folder{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .folder code{background:var(--chip);padding:3px 8px;border-radius:4px;font-size:11px;
     font-family:ui-monospace,Menlo,Consolas,monospace}
+  .chip.rw{background:var(--bad);border-color:var(--bad);color:#fff}
+  .note.warn{border-left:3px solid var(--warn);padding-left:8px}
   .cover{float:right;width:56px;height:78px;margin:0 0 6px 9px;border-radius:3px;
     border:1px solid var(--line);background:var(--chip) center/contain no-repeat;cursor:zoom-in}
   .cover:hover{border-color:var(--muted)}
@@ -132,7 +134,7 @@
   var T={films:'Films',rel:'Releases',aud:'AudioTracks',sub:'SubtitleTracks',scenes:'Scenes',
          avail:'SceneAvailability',credits:'Credits',people:'People',masters:'Masters',extras:'Extras'};
   var root=document.getElementById('root'),msg=document.getElementById('msg');
-  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],franchises=[],labelsTbl=[],curTok=null;
+  var filmId=null,tok=null,tokAt=0,allCredits=[],allPeople=[],allRel=[],franchises=[],labelsTbl=[],allParts=[],curTok=null;
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -170,7 +172,9 @@
   async function render(film){
     if(!film){show('Select a film&hellip;');return;}
     var d=await Promise.all([get(T.rel),get(T.aud),get(T.sub),get(T.scenes),get(T.avail),
-                             get(T.credits),get(T.people),get(T.masters),get(T.extras)]);
+                             get(T.credits),get(T.people),get(T.masters),get(T.extras),
+                             get('MasterParts')]);
+    allParts=d[9]||[];
     var rel=(allRel=d[0].filter(function(r){return r.Film===film.id;})),
         aud=d[1],sub=d[2],
         scenes=d[3].filter(function(s){return s.Film===film.id;}),
@@ -313,16 +317,77 @@
       h.push('</table>');
     }
 
-    // master
+    // ---- master, with what still needs doing to it ------------------------
     h.push('<h2>Master</h2>');
     if(!masters.length)h.push('<div class="empty-msg">No build planned.</div>');
     else masters.forEach(function(m){
+      var parts=(allParts||[]).filter(function(p){return p.Master===m.id;});
+      // has a better disc turned up since this was built?
+      var src=null;
+      rel.forEach(function(r){if(r.id===m.Video_Source)src=r;});
+      var bestQ=0,bestR=null;
+      rel.forEach(function(r){
+        var qv=Number(r.Video_Quality)||0;
+        if(qv>bestQ){bestQ=qv;bestR=r;}
+      });
+      var beaten=src&&bestR&&bestR.id!==src.id&&bestQ>(Number(src.Video_Quality)||0);
+
       h.push('<div class="rel"><div class="t">'+esc(m.Version_Name||'Master')+
-             ' <span class="badge">'+esc(m.Status||'')+'</span></div>');
-      if(m.Source_Checklist)h.push('<div class="checklist"><div>'+esc(m.Source_Checklist)+'</div></div>');
+             ' <span class="badge'+(m.Status==='Mastered'?' ok':'')+'">'+
+             esc(m.Status||'')+'</span>'+
+             (m.Master_Health?' <span class="badge '+
+               (m.Master_Health==='Finished'?'ok':
+                m.Master_Health==='Superseded'||m.Master_Health==='Needs rework'?'bad':'warn')+
+               '">'+esc(m.Master_Health)+'</span>':'')+'</div>');
+
+      var line=[];
+      if(src)line.push('from '+(src.Title_On_Release||''));
+      if(parts.length)line.push(parts.length+' logged part'+(parts.length===1?'':'s'));
+      if(m.Runtime_Min)line.push(m.Runtime_Min+' min');
+      if(m.Filesize_GB)line.push(m.Filesize_GB+' GB');
+      if(line.length)h.push('<div class="sub">'+esc(line.join(' \u00b7 '))+'</div>');
+
+      // what the parts are made of, one line each
+      if(parts.length){
+        var byKind={};
+        parts.forEach(function(p){(byKind[p.Part_Type]=byKind[p.Part_Type]||[]).push(p);});
+        h.push('<div class="chips" style="margin-top:6px">');
+        ['Audio','Subtitle','Scene insert'].forEach(function(k){
+          (byKind[k]||[]).forEach(function(p){
+            var weak=p.Treatment&&/re-encoded|translated|resynced/i.test(p.Treatment);
+            h.push('<span class="chip'+(k==='Audio'?' a':'')+'" title="'+
+              esc([p.Treatment,p.Notes].filter(Boolean).join(' \u2014 '))+'">'+
+              esc((k==='Scene insert'?'scene':p.Language||k))+
+              (weak?' \u00b7 '+esc(String(p.Treatment).toLowerCase()):'')+'</span>');
+          });
+        });
+        h.push('</div>');
+      }
+
+      if(m.Source_Checklist)
+        h.push('<div class="checklist"><div>'+esc(m.Source_Checklist)+'</div></div>');
       if(m.Conversion_Needed&&m.Conversion_Needed!=='None')
         h.push('<div class="sub">Conversion: '+esc(m.Conversion_Needed)+'</div>');
-      if(m.Custom_Filename)h.push('<div class="sub" style="margin-top:5px">'+esc(m.Custom_Filename)+'</div>');
+
+      // rework flags, entered by hand
+      var rw=listArr(m.Rework_Needed);
+      if(rw.length){
+        h.push('<div class="chips" style="margin-top:7px">');
+        rw.forEach(function(x){h.push('<span class="chip rw">'+esc(x)+'</span>');});
+        h.push('</div>');
+      }
+      if(m.Rework_Notes)h.push('<div class="note" style="margin-top:6px">'+
+        esc(m.Rework_Notes)+'</div>');
+
+      // and the one the document can work out for itself
+      if(beaten)h.push('<div class="note warn" style="margin-top:6px">A better disc has been '+
+        'logged since this was built \u2014 <b>'+esc(bestR.Title_On_Release||'')+
+        '</b> rates '+bestQ+' against the '+(Number(src.Video_Quality)||0)+
+        ' of the source used here.</div>');
+
+      if(m.Custom_Filename)h.push('<div class="sub" style="margin-top:6px">'+
+        esc(m.Custom_Filename)+'</div>');
+      if(m.NAS_Path)h.push('<div class="sub">'+esc(m.NAS_Path)+'</div>');
       if(m.Open_Issues)h.push('<div class="note" style="margin-top:6px">'+esc(m.Open_Issues)+'</div>');
       h.push('</div>');
     });
