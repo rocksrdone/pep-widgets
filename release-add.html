@@ -187,7 +187,26 @@
 
   var root=document.getElementById('root'),msg=document.getElementById('msg'),
       st=document.getElementById('status');
-  var film=null,labels=[];
+  var film=null,labels=[],COLS={};
+  async function colsOf(tbl){
+    if(COLS[tbl])return COLS[tbl];
+    try{
+      var t=await grist.docApi.fetchTable(tbl);
+      COLS[tbl]=Object.keys(t||{});
+    }catch(e){ COLS[tbl]=null; }        // unknown - do not filter
+    return COLS[tbl];
+  }
+  function keep(fields,cols){
+    if(!cols)return fields;
+    var out={},dropped=[];
+    Object.keys(fields).forEach(function(k){
+      if(cols.indexOf(k)>=0)out[k]=fields[k];
+      else dropped.push(k);
+    });
+    if(dropped.length)MISSING=MISSING.concat(dropped);
+    return out;
+  }
+  var MISSING=[];
 
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
@@ -399,6 +418,22 @@
       var vbr=Number(vid.bit_rate||fmt.bit_rate||0);
       if(vbr){n+=setIf('f_vbr',Math.round(vbr/1000));
               if(fps&&w&&h)n+=setIf('f_bpp',(vbr/(w*h*fps)).toFixed(3));}
+      // frame rate and frame size between them settle the standard
+      var std='';
+      if(fps){
+        var sd=[[720,576],[704,576],[720,480],[704,480],[352,288],[352,240]]
+                 .some(function(p){return p[0]===w&&p[1]===h;});
+        if(Math.abs(fps-25)<0.1)      std = sd ? 'PAL' : 'Film 24';
+        else if(Math.abs(fps-29.97)<0.1||Math.abs(fps-30)<0.1) std = sd ? 'NTSC' : 'Progressive';
+        else if(Math.abs(fps-24)<0.1||Math.abs(fps-23.976)<0.05) std='Film 24';
+        else if(fps>=48) std='Progressive';
+        if(std)n+=setIf('f_std',std);
+        if(std==='Film 24'&&sd)
+          notes.push('24fps at standard-definition size \u2014 a film-rate DVD, unusual. Worth checking.');
+        if(std==='PAL'&&!sd)
+          notes.push('25fps but not a PAL frame size \u2014 recorded as Film 24 would be wrong, '+
+                     'but check this is not a PAL source that was upscaled.');
+      }
       var fo=String(vid.field_order||'');
       if(/progressive/i.test(fo))n+=setIf('f_scan','Progressive');
       else if(/^t/i.test(fo)){n+=setIf('f_scan','Interlaced');n+=setIf('f_field','Top Field First');}
@@ -536,6 +571,17 @@
       if(br)n+=setIf('f_vbr',Math.round(br));
       var fps=numOf(pick(vid.kv,'Frame rate'));
       if(fps)n+=setIf('f_fps',fps.toFixed(3));
+      var mstd=pick(vid.kv,'Standard');
+      if(/PAL/i.test(mstd))n+=setIf('f_std','PAL');
+      else if(/NTSC/i.test(mstd))n+=setIf('f_std','NTSC');
+      else if(fps){
+        var w2=numOf(pick(vid.kv,'Width'))||0,h2=numOf(pick(vid.kv,'Height'))||0;
+        var sd2=[[720,576],[704,576],[720,480],[704,480]]
+                  .some(function(p){return p[0]===w2&&p[1]===h2;});
+        if(Math.abs(fps-25)<0.1)n+=setIf('f_std',sd2?'PAL':'Film 24');
+        else if(Math.abs(fps-29.97)<0.1)n+=setIf('f_std',sd2?'NTSC':'Progressive');
+        else if(Math.abs(fps-24)<0.1||Math.abs(fps-23.976)<0.05)n+=setIf('f_std','Film 24');
+      }
       n+=setIf('f_scan',pick(vid.kv,'Scan type'));
       var so=pick(vid.kv,'Scan order');
       if(/top/i.test(so))n+=setIf('f_field','Top Field First');
@@ -629,10 +675,13 @@
     Object.keys(fields).forEach(function(k){if(fields[k]==='')delete fields[k];});
 
     try{
-      var res=await grist.docApi.applyUserActions([['AddRecord',T.rel,null,fields]]);
+      MISSING=[];
+      var relCols=await colsOf(T.rel);
+      var res=await grist.docApi.applyUserActions([['AddRecord',T.rel,null,keep(fields,relCols)]]);
       var rid=res&&res.retValues&&res.retValues[0];
       if(!rid)throw new Error('No row id returned');
       var acts=[];
+      var audCols=await colsOf(T.aud), subCols=await colsOf(T.sub);
       Array.prototype.forEach.call(document.querySelectorAll('#auds .tk'),function(d){
         var af={Release:rid,
           Language:d.querySelector('.lang').value,
@@ -641,13 +690,13 @@
         if(d.dataset.codec)af.Codec=d.dataset.codec;
         if(d.dataset.channels)af.Channels=d.dataset.channels;
         if(d.dataset.bitrate)af.Bitrate=Number(d.dataset.bitrate);
-        acts.push(['AddRecord',T.aud,null,af]);
+        acts.push(['AddRecord',T.aud,null,keep(af,audCols)]);
       });
       Array.prototype.forEach.call(document.querySelectorAll('#subs .tk'),function(d){
-        acts.push(['AddRecord',T.sub,null,{Release:rid,
+        acts.push(['AddRecord',T.sub,null,keep({Release:rid,
           Language:d.querySelector('.lang').value,
           Sub_Type:d.querySelector('.type').value,
-          Format:d.querySelector('.fmt').value}]);
+          Format:d.querySelector('.fmt').value},subCols)]);
       });
       if(acts.length)await grist.docApi.applyUserActions(acts);
       st.className='ok';
