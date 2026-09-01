@@ -50,6 +50,8 @@
   .badge.bad{background:var(--bad);border-color:var(--bad);color:#fff}
   .badge.warn{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
   .folders{margin:0 0 14px}
+  .warnbox{border:1px solid var(--warn);background:rgba(229,168,59,.12);border-radius:6px;
+    padding:8px 10px;font-size:11.5px;line-height:1.6;margin-bottom:9px}
   .frow{display:flex;gap:9px;align-items:center;padding:3px 0;flex-wrap:wrap}
   .frow .fk{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
     min-width:96px}
@@ -147,9 +149,20 @@
   }
   function relFolder(r){
     var f=film(r);
-    var head=clean(f.Original_Title)+(f.Year?' ('+parseInt(f.Year,10)+')':'');
+    // fall back to the release's own title when no film is linked
+    var t=clean(f.Original_Title)||clean(r.Title_On_Release);
+    var head=t+(f.Year?' ('+parseInt(f.Year,10)+')':'');
     var bits=[head,r.Format,clean(labelOf(r)),r.Country,r.Region_Code];
     return bits.filter(Boolean).join(' ');
+  }
+  function folderGaps(r){
+    var f=film(r),g=[];
+    if(!f||!f.id)g.push('no <b>Film</b> is linked, so there is no title, year or film folder');
+    else if(!f.Folder_Name)g.push('the film has no <b>Folder_Name</b> \u2014 check that formula');
+    if(!r.Label)g.push('no <b>Label</b> is set');
+    if(!r.Format)g.push('no <b>Format</b> is set');
+    if(!r.Country)g.push('no <b>Country</b> is set');
+    return g;
   }
   function sp(k,v,dim){return '<div class="sp"><div class="k">'+esc(k)+'</div><div class="v'+
     (dim?' n':'')+'">'+(v===''||v==null?'\u2014':esc(v))+'</div></div>';}
@@ -246,8 +259,12 @@
     h.push('</div>');
 
     var f2=film(r);
+    var gaps=folderGaps(r);
     h.push('<div class="folders">');
-    if(f2.Folder_Name)
+    if(gaps.length)
+      h.push('<div class="warnbox">These names are incomplete because '+gaps.join(', ')+
+             '. Fill those in and the folder names will be right.</div>');
+    if(f2&&f2.Folder_Name)
       h.push('<div class="frow"><span class="fk">Film folder</span>'+
         '<code id="ff1">'+esc(f2.Folder_Name)+'</code>'+
         '<button class="mini" data-cp="ff1">copy</button></div>');
