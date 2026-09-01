@@ -81,7 +81,7 @@
 <script>
 (function(){
   "use strict";
-  var os='win',src='dvd',opt={};
+  var os='win',src='dvd',opt={},workDir='',fileName='',useCd=true;
   var root=document.getElementById('root');
 
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -103,6 +103,17 @@
     return d?qq(join(d,exe)):exe;
   }
   function outdir(){return opt[os+'_out']||(os==='win'?'D:\\Rips':'~/rips');}
+  // where the files actually are for this job
+  function W(){return workDir||outdir();}
+  // a file in that folder: bare name when we cd first, full path otherwise
+  function P(name){return useCd?qq(name):qq(join(W(),name));}
+  function cdLine(){
+    if(!useCd)return '';
+    var d=W();
+    return (os==='win'
+      ? (/^[A-Za-z]:/.test(d)?d.slice(0,2)+'\n':'')+'cd '+qq(d)
+      : 'cd '+qq(d))+'\n';
+  }
   function hashCmd(f){return os==='win'?'certutil -hashfile '+f+' SHA256':'sha256sum '+f;}
 
   async function saveOpt(k,v){
@@ -116,18 +127,20 @@
 
   // ---- step definitions ------------------------------------------------------
   function steps(){
-    var O=qq(outdir()), S=[];
-    var probe=function(target,label){
-      var rep=qq(join(outdir(),'peplum-report.txt'));
+    var O=useCd?qq('.'):qq(outdir()), S=[];
+    var probe=function(target){
+      var rep=P('peplum-report.txt');
       return {h:'Probe it and record the numbers',
         p:'Writes one file holding the full technical report plus a measurement of the black bars. '+
           'Paste it into <b>release-add</b> and the form fills itself.',
-        c:tool('ffprobe')+' -v error -print_format json -show_format -show_streams -show_chapters '+
+        c:cdLine()+
+          tool('ffprobe')+' -v error -print_format json -show_format -show_streams -show_chapters '+
           target+' > '+rep+'\n'+
           (os==='win'?'echo ===CROPDETECT=== >> ':'echo "===CROPDETECT===" >> ')+rep+'\n'+
           tool('ffmpeg')+' -hide_banner -ss 00:10:00 -i '+target+
           ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+rep};
     };
+    var F=function(def){return P(fileName||def);};
 
     if(src==='dvd'){
       S.push({h:'See what is on the disc',
@@ -136,8 +149,8 @@
       S.push({h:'Rip every title losslessly',
         p:'MakeMKV remuxes rather than re-encodes, so the video is bit-for-bit what is on the disc. '+
           'It also copies the language tags out of the IFO, which raw VOBs do not carry.',
-        c:mkv()+' --minlength=60 mkv disc:0 all '+O});
-      S.push(probe(qq(join(outdir(),'title_t00.mkv'))));
+        c:cdLine()+mkv()+' --minlength=60 mkv disc:0 all '+O});
+      S.push(probe(F('title_t00.mkv')));
       S.push({h:'Keep the untouched rip',
         p:'File it under <b>Untouched Releases</b> in the film folder and tick '+
           '<code>Untouched_Rip</code> on the release. Everything later is derived from this.',c:''});
@@ -146,21 +159,20 @@
       S.push({h:'Rip from the folder',
         p:'MakeMKV reads a VIDEO_TS folder as happily as a disc, and still picks up the languages '+
           'from the IFO files.',
-        c:mkv()+' --minlength=60 mkv file:'+qq(os==='win'?'D:\\Rips\\Film\\VIDEO_TS':'~/rips/film/VIDEO_TS')+
+        c:cdLine()+mkv()+' --minlength=60 mkv file:'+(useCd?qq('VIDEO_TS'):qq(join(W(),'VIDEO_TS')))+
           ' all '+O});
-      S.push(probe(qq(join(outdir(),'title_t00.mkv'))));
+      S.push(probe(F('title_t00.mkv')));
       S.push({h:'Or probe the VOB directly',
         p:'Quicker if you only want the numbers. Expect blank languages \u2014 those live in the IFO, '+
           'not the VOB.',
-        c:tool('ffprobe')+' -v error -print_format json -show_format -show_streams '+
-          qq(os==='win'?'D:\\Rips\\Film\\VIDEO_TS\\VTS_01_1.VOB':'~/rips/film/VIDEO_TS/VTS_01_1.VOB')});
+        c:cdLine()+tool('ffprobe')+' -v error -print_format json -show_format -show_streams '+
+          (useCd?qq(join('VIDEO_TS','VTS_01_1.VOB')):qq(join(join(W(),'VIDEO_TS'),'VTS_01_1.VOB')))});
     }
     if(src==='iso'){
       S.push({h:'Rip straight from the image',
         p:'No need to mount it \u2014 MakeMKV opens ISOs directly.',
-        c:mkv()+' --minlength=60 mkv iso:'+qq(os==='win'?'D:\\Rips\\Film.iso':'~/rips/film.iso')+
-          ' all '+O});
-      S.push(probe(qq(join(outdir(),'title_t00.mkv'))));
+        c:cdLine()+mkv()+' --minlength=60 mkv iso:'+F('film.iso')+' all '+O});
+      S.push(probe(F('title_t00.mkv')));
     }
     if(src==='bluray'){
       S.push({h:'List the titles',
@@ -168,22 +180,23 @@
           'runtime you expect before ripping.',
         c:mkv()+' -r info disc:0'});
       S.push({h:'Rip the feature',
-        p:'Replace <b>0</b> with the title number from the list above if you only want one.',
-        c:mkv()+' --minlength=600 mkv disc:0 all '+O});
-      S.push(probe(qq(join(outdir(),'title_t00.mkv'))));
+        p:'Replace <b>all</b> with the title number from the list above if you only want one.',
+        c:cdLine()+mkv()+' --minlength=600 mkv disc:0 all '+O});
+      S.push(probe(F('title_t00.mkv')));
     }
     if(src==='mine'){
-      S.push(probe(qq(join(outdir(),'Afrodite (1958) Medusa.mkv'))));
+      S.push(probe(F('film.mkv')));
       S.push({h:'Record a checksum',
         p:'Lets you prove later that the file on the NAS is the one you measured, and catches '+
           'silent corruption after a move.',
-        c:hashCmd(qq(join(outdir(),'Afrodite (1958) Medusa.mkv')))});
+        c:cdLine()+hashCmd(F('film.mkv'))});
     }
     if(src==='download'){
       S.push({h:'Probe it exactly as you would your own rip',
         p:'The numbers are still worth recording \u2014 they just describe <b>this file</b>, not a disc.',
-        c:tool('ffprobe')+' -v error -print_format json -show_format -show_streams -show_chapters '+
-          qq(join(outdir(),'unknown.mkv'))+' > '+qq(join(outdir(),'peplum-report.txt'))});
+        c:cdLine()+tool('ffprobe')+
+          ' -v error -print_format json -show_format -show_streams -show_chapters '+
+          F('unknown.mkv')+' > '+P('peplum-report.txt')});
       S.push({h:'Look for signs of re-encoding',
         p:'Paste the report into the checker below and it will flag anything that does not look '+
           'like an untouched disc.',c:''});
@@ -272,22 +285,31 @@
       '</div><div class="note">Kept separately for each platform, so switching the tab above '+
       'switches the whole set. Blank means the tool is already on your PATH.</div></fieldset>');
 
+    h.push('<fieldset><legend>This job</legend><div class="row">'+
+      '<div style="grid-column:span 2"><label>Folder these files are in</label>'+
+      '<input id="o_dir" value="'+esc(workDir)+'" placeholder="'+
+        (os==='win'?'D:\\Rips\\Afrodite (1958)':'/mnt/nas/rips/afrodite')+'"></div>'+
+      '<div><label>File name</label><input id="o_file" value="'+esc(fileName)+
+        '" placeholder="title_t00.mkv"></div>'+
+      '</div><div class="row"><div style="grid-column:1/-1">'+
+      '<label style="display:flex;gap:6px;align-items:center;color:var(--fg);font-size:12px">'+
+      '<input type="checkbox" id="o_cd" style="width:auto"'+(useCd?' checked':'')+
+      '> start the command by changing into that folder</label></div></div>'+
+      '<div id="fdrop" class="note" style="border:1px dashed var(--line);border-radius:6px;'+
+      'padding:9px;text-align:center;cursor:pointer;margin-top:4px">'+
+      'Drop a file here to fill in its name'+
+      '<br><span style="font-size:10.5px">In Explorer, Shift+right-click a file or folder and '+
+      'choose <b>Copy as path</b> to get the folder above. On Linux, copy it from the address bar '+
+      'in your file manager.</span></div>'+
+      '<input type="file" id="fpick" style="display:none"></fieldset>');
+
     if(src==='download'){
       h.push('<div class="warnbox"><b>A file you did not make yourself.</b> Everything below still '+
         'applies, but what you measure describes the file in front of you, not the disc it came '+
         'from. Record it, mark it unverified, and replace it when you find a real source.</div>');
     }
 
-    h.push('<h2>Steps</h2>');
-    steps().forEach(function(s,i){
-      h.push('<div class="step"><h3><span class="n">'+(i+1)+'</span>'+esc(s.h)+'</h3>');
-      h.push('<p>'+s.p+'</p>');
-      if(s.c){
-        h.push('<pre id="c'+i+'">'+esc(s.c)+'</pre>');
-        h.push('<button class="btn" data-copy="c'+i+'">Copy</button>');
-      }
-      h.push('</div>');
-    });
+    h.push('<h2>Steps</h2><div id="stephost">'+stepsHtml()+'</div>');
 
     h.push('<h2>Is it really an untouched rip?</h2>');
     h.push('<div class="note">Paste an ffprobe report and it will tell you whether the numbers '+
@@ -311,12 +333,64 @@
     bind();
   }
 
+  function refreshSteps(){
+    var host=document.getElementById('stephost');
+    if(!host)return;
+    host.innerHTML=stepsHtml();
+    bindCopies();
+  }
+  function stepsHtml(){
+    var h=[];
+    steps().forEach(function(s,i){
+      h.push('<div class="step"><h3><span class="n">'+(i+1)+'</span>'+esc(s.h)+'</h3>');
+      h.push('<p>'+s.p+'</p>');
+      if(s.c){
+        h.push('<pre id="c'+i+'">'+esc(s.c)+'</pre>');
+        h.push('<button class="btn" data-copy="c'+i+'">Copy</button>');
+      }
+      h.push('</div>');
+    });
+    return h.join('');
+  }
+  function bindCopies(){
+    Array.prototype.forEach.call(root.querySelectorAll('[data-copy]'),function(b){
+      b.onclick=function(){
+        navigator.clipboard.writeText(document.getElementById(b.getAttribute('data-copy')).textContent);
+        b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1300);
+      };
+    });
+  }
   function bind(){
     [['o_ff','_ff'],['o_mkv','_mkv'],['o_out','_out']].forEach(function(p){
       var el=document.getElementById(p[0]);
       if(!el)return;
       el.onchange=function(){saveOpt(os+p[1],el.value.trim());render();};
     });
+    var dirEl=document.getElementById('o_dir');
+    if(dirEl)dirEl.oninput=function(){workDir=this.value.trim();refreshSteps();};
+    var fEl=document.getElementById('o_file');
+    if(fEl)fEl.oninput=function(){fileName=this.value.trim();refreshSteps();};
+    var cdEl=document.getElementById('o_cd');
+    if(cdEl)cdEl.onchange=function(){useCd=this.checked;refreshSteps();};
+    var fd=document.getElementById('fdrop'),fp=document.getElementById('fpick');
+    if(fd&&fp){
+      fd.onclick=function(){fp.click();};
+      fp.onchange=function(){
+        if(!fp.files.length)return;
+        fileName=fp.files[0].name;
+        document.getElementById('o_file').value=fileName;refreshSteps();
+      };
+      ['dragover','dragleave','drop'].forEach(function(ev){
+        fd.addEventListener(ev,function(e){
+          e.preventDefault();
+          fd.style.borderColor=(ev==='dragover')?'var(--ok)':'var(--line)';
+          if(ev==='drop'&&e.dataTransfer.files.length){
+            fileName=e.dataTransfer.files[0].name;
+            document.getElementById('o_file').value=fileName;refreshSteps();
+          }
+        });
+      });
+    }
     Array.prototype.forEach.call(root.querySelectorAll('[data-copy]'),function(b){
       b.onclick=function(){
         navigator.clipboard.writeText(document.getElementById(b.getAttribute('data-copy')).textContent);
