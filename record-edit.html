@@ -64,6 +64,7 @@
 <body>
 <div id="bar">
   <div class="tabs" id="tabs"></div>
+  <button class="tab" id="newrec" title="Create a blank record and open it">+ New</button>
   <input id="q" placeholder="Search&hellip;" autocomplete="off">
   <span id="count"></span>
   <div id="hits"></div>
@@ -272,12 +273,37 @@
         x.classList.toggle('on',x===b);});
       cur=null;root.style.display='none';
       msg.style.display='block';
-      msg.textContent='Search for a '+SCHEMA[curTable].label.replace(/s$/,'')+' to edit.';
+      msg.textContent='Search for a '+SCHEMA[curTable].label.replace(/s$/,'')+
+        ' to edit, or press + New.';
+      document.getElementById('newrec').textContent='+ New '+
+        SCHEMA[curTable].label.replace(/s$/,'').toLowerCase();
       q.value='';q.placeholder='Search '+SCHEMA[curTable].label.toLowerCase()+'\u2026';
       cnt.textContent=(data[curTable]||[]).length+' rows';
       hits.style.display='none';
     };
   });
+
+  // ---- create a blank record and open it ------------------------------------
+  async function newRecord(){
+    var S=SCHEMA[curTable];
+    try{
+      var r=await grist.docApi.applyUserActions([['AddRecord',curTable,null,{}]]);
+      var id=r&&r.retValues&&r.retValues[0];
+      data[curTable]=await get(curTable);
+      if(id){
+        open(id);
+        var st=document.getElementById('status');
+        if(st){st.className='ok';
+          st.textContent='Blank '+S.label.replace(/s$/,'').toLowerCase()+
+            ' created \u2014 fill it in below. Delete it if you change your mind.';}
+      }
+    }catch(e){
+      msg.style.display='block';root.style.display='none';
+      msg.innerHTML='Could not create a record in '+esc(curTable)+': '+
+        esc(String(e&&e.message||e));
+    }
+  }
+  document.getElementById('newrec').onclick=newRecord;
 
   // ---- search --------------------------------------------------------------
   function matchRow(r,words){
@@ -478,6 +504,7 @@
     for(var i=0;i<names.length;i++)data[names[i]]=await get(names[i]);
     cnt.textContent=(data[curTable]||[]).length+' rows';
     q.placeholder='Search films\u2026';
+    document.getElementById('newrec').textContent='+ New film';
   })();
 })();
 </script>
