@@ -97,6 +97,23 @@
     var sep=(os==='win')?'\\':'/';
     return dir.replace(/[\\/]+$/,'')+sep+name;
   }
+  // PowerShell's > writes UTF-16, which breaks the report parser
+  function toFile(path,append){
+    if(os==='win'&&shell==='ps')
+      return ' | Out-File -Encoding utf8'+(append?' -Append':'')+' '+path;
+    return (append?' >> ':' > ')+path;
+  }
+  function errToFile(path){
+    if(os==='win'&&shell==='ps')
+      return ' 2>&1 | Out-File -Encoding utf8 -Append '+path;
+    return ' 2>> '+path;
+  }
+  function echoLine(text,path){
+    if(os==='win'&&shell==='ps')
+      return '"'+text+'" | Out-File -Encoding utf8 -Append '+path;
+    if(os==='win')return 'echo '+text+' >> '+path;
+    return 'echo "'+text+'" >> '+path;
+  }
   function run(exe){
     // a quoted path at the start of a PowerShell line is just a string
     return (os==='win'&&shell==='ps'&&/^"/.test(exe)) ? '& '+exe : exe;
@@ -160,10 +177,10 @@
           'Paste it into <b>release-add</b> and the form fills itself.',
         c:cdLine()+
           run(tool('ffprobe'))+' -v error -print_format json -show_format -show_streams -show_chapters '+
-          target+' > '+rep+'\n'+
-          (os==='win'?'echo ===CROPDETECT=== >> ':'echo "===CROPDETECT===" >> ')+rep+'\n'+
+          target+toFile(rep)+'\n'+
+          echoLine('===CROPDETECT===',rep)+'\n'+
           run(tool('ffmpeg'))+' -hide_banner -ss 00:10:00 -i '+target+
-          ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+rep};
+          ' -vf cropdetect=24:2:0 -frames:v 300 -f null -'+errToFile(rep)};
     };
     var F=function(def){return P(safeFile(def));};
 
@@ -210,10 +227,10 @@
           'Paste it into <b>release-add</b> and the form fills itself. Change the file name above '+
           'if MakeMKV named it something other than title_t00.mkv.',
         c:run(tool('ffprobe'))+' -v error -print_format json -show_format -show_streams -show_chapters '+
-          MK+' > '+REP+'\n'+
-          (os==='win'?'echo ===CROPDETECT=== >> ':'echo "===CROPDETECT===" >> ')+REP+'\n'+
+          MK+toFile(REP)+'\n'+
+          echoLine('===CROPDETECT===',REP)+'\n'+
           run(tool('ffmpeg'))+' -hide_banner -ss 00:10:00 -i '+MK+
-          ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+REP});
+          ' -vf cropdetect=24:2:0 -frames:v 300 -f null -'+errToFile(REP)});
       S.push({h:'If MakeMKV refuses or the disc is damaged',
         p:'Remuxes the VOBs directly. Streams are copied untouched, so the picture is identical, '+
           'but you lose chapters and language tags. The extra flags force it past bad sectors and '+
@@ -250,9 +267,9 @@
     if(src==='download'){
       S.push({h:'Probe it exactly as you would your own rip',
         p:'The numbers are still worth recording \u2014 they just describe <b>this file</b>, not a disc.',
-        c:cdLine()+tool('ffprobe')+
+        c:cdLine()+run(tool('ffprobe'))+
           ' -v error -print_format json -show_format -show_streams -show_chapters '+
-          F('unknown.mkv')+' > '+P('peplum-report.txt')});
+          F('unknown.mkv')+toFile(P('peplum-report.txt'))});
       S.push({h:'Look for signs of re-encoding',
         p:'Paste the report into the checker below and it will flag anything that does not look '+
           'like an untouched disc.',c:''});
