@@ -68,6 +68,10 @@
   table.parts .tr{color:var(--muted)}
   table.parts .none{color:var(--muted);font-style:italic}
   .note.warn{border-left:3px solid var(--warn);padding-left:8px}
+  .vstamp{display:inline-block;font-size:10px;padding:1px 8px;border-radius:9px;
+    background:var(--ok);color:#fff;font-weight:600;margin-right:6px}
+  .vstamp i{font-style:normal;opacity:.8;font-weight:400}
+  .rel.vok{border-color:var(--ok)}
   .cover{float:right;width:56px;height:78px;margin:0 0 6px 9px;border-radius:3px;
     border:1px solid var(--line);background:var(--chip) center/contain no-repeat;cursor:zoom-in}
   .cover:hover{border-color:var(--muted)}
@@ -150,6 +154,19 @@
   function show(h){msg.style.display=h?'block':'none';if(h)msg.innerHTML=h;root.style.display=h?'none':'block';}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function cleanName(x){
+    return String(x||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/['\u2019]/g,' ').replace(/[,\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+  }
+  function folderNameOf(f){
+    if(f.Folder_Name)return {name:f.Folder_Name,derived:false};
+    var o=cleanName(f.Original_Title), e=cleanName(f.English_Title);
+    var y=f.Year?' ('+parseInt(f.Year,10)+')':'';
+    if(!o&&!e)return {name:'',derived:true};
+    if(!o)return {name:e+y,derived:true};
+    if(e&&e.toLowerCase()!==o.toLowerCase())return {name:o+' - '+e+y,derived:true};
+    return {name:o+y,derived:true};
+  }
   function listArr(v){
     if(v==null)return [];
     if(Array.isArray(v))return (v[0]==='L'?v.slice(1):v).slice();
@@ -288,9 +305,12 @@
         h.push('<div><span class="fk">'+esc(f[0])+'</span><span class="fv">'+esc(f[1])+'</span></div>');});
       h.push('</div>');
     }
-    if(film.Folder_Name)
-      h.push('<div class="folder"><code id="foldername">'+esc(film.Folder_Name)+'</code>'+
-             '<button class="mini" id="fcopy">copy</button></div>');
+    var fn=folderNameOf(film);
+    if(fn.name)
+      h.push('<div class="folder"><code id="foldername">'+esc(fn.name)+'</code>'+
+             '<button class="mini" id="fcopy">copy</button>'+
+             (fn.derived?'<span class="sub" title="Add a Folder_Name formula column to Films '+
+               'and this will come from there instead">worked out here</span>':'')+'</div>');
     if(film.Best_Version_Notes)h.push('<div class="note">'+esc(film.Best_Version_Notes)+'</div>');
     h.push('</div></div>');
 
@@ -303,8 +323,15 @@
         var a=aud.filter(function(x){return x.Release===r.id;}),
             s=sub.filter(function(x){return x.Release===r.id;});
         var cf=att(r.Cover_Front),cb=att(r.Cover_Back);
-        h.push('<div class="rel">');
+        h.push('<div class="rel'+(r.Verified?' vok':'')+'">');
         if(r.Ownership)h.push('<span class="own '+esc(r.Ownership)+'">'+esc(r.Ownership)+'</span>');
+        if(r.Verified){
+          var vd=r.Verified_Date?yr(r.Verified_Date):'';
+          h.push('<span class="vstamp" title="'+
+            esc('Checked against the disc'+(vd?' in '+vd:'')+
+                (r.Verified_Notes?' — '+r.Verified_Notes:''))+'">✓ verified'+
+            (vd?' <i>'+esc(vd)+'</i>':'')+'</span>');
+        }
         if(cf&&t)h.push('<div class="cover" data-rel="'+r.id+'" title="click to see front and back" '+
           'style="background-image:url(\''+url(t,cf)+'\')"></div>');
         else if(cb&&t)h.push('<div class="cover" data-rel="'+r.id+'" '+
