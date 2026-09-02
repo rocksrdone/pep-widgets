@@ -49,6 +49,13 @@
   .badge.ok{background:var(--ok);border-color:var(--ok);color:#fff}
   .badge.bad{background:var(--bad);border-color:var(--bad);color:#fff}
   .badge.warn{background:var(--warn);border-color:var(--warn);color:#1c1c1c}
+  .addrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px}
+  .addform{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .addform select,.addform input[type=text],.addform input:not([type]){padding:3px 6px;
+    border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--fg);
+    font:inherit;font-size:11px}
+  .addform label{display:flex;gap:4px;align-items:center;font-size:11px;color:var(--muted)}
+  .mini.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
   .folders{margin:0 0 14px}
   .warnbox{border:1px solid var(--warn);background:rgba(229,168,59,.12);border-radius:6px;
     padding:8px 10px;font-size:11.5px;line-height:1.6;margin-bottom:9px}
@@ -121,6 +128,16 @@
       q=document.getElementById('q'),cnt=document.getElementById('count'),
       box=document.getElementById('box');
 
+  var LANGS=['Italian','English','French','Spanish','German','Russian','Japanese',
+             'Portuguese','Latin','Greek','Other'];
+  var ATYPES=['Original','Dub','Fandub','Commentary','Isolated score'];
+  var STYPES=['Full','SDH','Forced','Songs only','Fan'];
+  var SFMTS=['SRT','VobSub','PGS','ASS','Burned-in','CC'];
+  var SSRCS=['Official','OCR','Fan','Machine translation'];
+  function fillSel(id,list){
+    var el=document.getElementById(id);
+    if(el)el.innerHTML=list.map(function(x){return '<option>'+x+'</option>';}).join('');
+  }
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   function recs(t){if(!t||!t.id)return[];var k=Object.keys(t),n=t.id.length,o=[];
@@ -319,6 +336,16 @@
       });
       h.push('</table>');
     }
+    h.push('<div class="addrow"><button class="mini" data-add="aud">+ audio track</button>'+
+      '<span class="addform" id="form-aud" style="display:none">'+
+        '<select id="aud-lang"></select>'+
+        '<select id="aud-type"></select>'+
+        '<input id="aud-codec" placeholder="codec, e.g. AC-3">'+
+        '<input id="aud-ch" placeholder="channels">'+
+        '<label><input type="checkbox" id="aud-use"> use in master</label>'+
+        '<button class="mini go" data-save="aud">Add</button>'+
+      '</span></div>');
+
     h.push('<h2>Subtitle tracks</h2>');
     if(!subs.length)h.push('<div class="empty">None logged.</div>');
     else{
@@ -333,6 +360,16 @@
       });
       h.push('</table>');
     }
+
+    h.push('<div class="addrow"><button class="mini" data-add="sub">+ subtitle track</button>'+
+      '<span class="addform" id="form-sub" style="display:none">'+
+        '<select id="sub-lang"></select>'+
+        '<select id="sub-type"></select>'+
+        '<select id="sub-fmt"></select>'+
+        '<select id="sub-src"></select>'+
+        '<label><input type="checkbox" id="sub-use"> use in master</label>'+
+        '<button class="mini go" data-save="sub">Add</button>'+
+      '</span></div>');
 
     // scenes
     var scenes=(D.scenes||[]).filter(function(s){return s.Film===r.Film;})
@@ -422,6 +459,51 @@
     if(r.Notes)h.push('<h2>Notes</h2><div class="note">'+esc(r.Notes).replace(/\n/g,'<br>')+'</div>');
 
     p.innerHTML=h.join('');
+    fillSel('aud-lang',LANGS); fillSel('aud-type',ATYPES);
+    fillSel('sub-lang',LANGS);  fillSel('sub-type',STYPES);
+    fillSel('sub-fmt',SFMTS);   fillSel('sub-src',SSRCS);
+
+    Array.prototype.forEach.call(p.querySelectorAll('[data-add]'),function(b){
+      b.onclick=function(){
+        var k=b.getAttribute('data-add');
+        var f=document.getElementById('form-'+k);
+        var open=f.style.display!=='none';
+        f.style.display=open?'none':'inline-flex';
+        b.textContent=open?('+ '+(k==='aud'?'audio':'subtitle')+' track'):'cancel';
+      };
+    });
+    Array.prototype.forEach.call(p.querySelectorAll('[data-save]'),function(b){
+      b.onclick=async function(){
+        var k=b.getAttribute('data-save');
+        var fields={Release:cur.id};
+        if(k==='aud'){
+          fields.Language=document.getElementById('aud-lang').value;
+          fields.Track_Type=document.getElementById('aud-type').value;
+          var cd=document.getElementById('aud-codec').value.trim();
+          var ch=document.getElementById('aud-ch').value.trim();
+          if(cd)fields.Codec=cd;
+          if(ch)fields.Channels=ch;
+          fields.Use_In_Master=document.getElementById('aud-use').checked;
+        } else {
+          fields.Language=document.getElementById('sub-lang').value;
+          fields.Sub_Type=document.getElementById('sub-type').value;
+          fields.Format=document.getElementById('sub-fmt').value;
+          fields.Source=document.getElementById('sub-src').value;
+          fields.Use_In_Master=document.getElementById('sub-use').checked;
+        }
+        b.textContent='Adding\u2026';
+        try{
+          await grist.docApi.applyUserActions([['AddRecord',
+            k==='aud'?T.aud:T.sub,null,fields]]);
+          D.aud=await get(T.aud); D.sub=await get(T.sub);
+          render();
+        }catch(e){
+          b.textContent='Add';
+          alert('Could not add the track: '+(e&&e.message||e));
+        }
+      };
+    });
+
     Array.prototype.forEach.call(p.querySelectorAll('[data-cp]'),function(b){
       b.onclick=function(){
         navigator.clipboard.writeText(document.getElementById(b.getAttribute('data-cp')).textContent);
