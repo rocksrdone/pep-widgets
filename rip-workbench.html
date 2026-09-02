@@ -382,6 +382,34 @@
       'in your file manager.</span></div>'+
       '<input type="file" id="fpick" style="display:none">'+fileWarn()+'</fieldset>');
 
+    var W=(os==='win');
+    var tdir=opt[os+'_ff']||(W?'C:\\ffmpeg':'~/tools');
+    h.push('<div class="scripts"><div class="sh">Use the scripts \u2014 they handle the '+
+      'quoting, the paths and the encoding for you</div>'+
+      '<table class="sct">'+
+      '<tr><td class="n">1</td><td><b>Keep the four files together</b> in '+
+        '<code>'+esc(tdir)+'</code>:<br><code>'+
+        (W?'rip.bat &nbsp; rip_source.py &nbsp; verify.bat &nbsp; verify_source.py'
+          :'rip.sh &nbsp; rip_source.py &nbsp; verify.sh &nbsp; verify_source.py')+
+        '</code>'+(W?'':'<br>Then once: <code>chmod +x rip.sh verify.sh</code>')+'</td></tr>'+
+      '<tr><td class="n">2</td><td><b>Rip it.</b> '+
+        (W?'Copy <code>rip.bat</code> and <code>rip_source.py</code> into the release folder '+
+           'and double-click <code>rip.bat</code>. Or drag the folder onto it.'
+          :'Run <code>'+esc(tdir)+'/rip.sh "/path/to/release folder"</code>')+
+        '<br><span class="q">Finds the source, rips to a <b>rip</b> folder beside it, offers to '+
+        'rename the file, then writes <b>peplum-report.txt</b>.</span></td></tr>'+
+      '<tr><td class="n">3</td><td><b>Check the untouched source.</b> '+
+        (W?'Double-click <code>verify.bat</code> in the same place.'
+          :'Run <code>'+esc(tdir)+'/verify.sh "/path/to/release folder"</code>')+
+        '<br><span class="q">Answer <b>full</b> and yes to both questions. Writes '+
+        '<b>verify-report.txt</b> and <b>checksums.sha256</b>, and tells you whether the disc '+
+        'earns Verified.</span></td></tr>'+
+      '<tr><td class="n">4</td><td><b>Paste the report.</b> Open <b>peplum-report.txt</b>, select '+
+        'all, and paste it into <b>release-add</b>. It looks like machine output because it is '+
+        '\u2014 you never read it, the widget does.<br><span class="q">Probe the <b>MKV</b>, not '+
+        'the raw VOBs: only the MKV carries the audio languages and chapters.</span></td></tr>'+
+      '</table></div>');
+
     if(src==='download'){
       h.push('<div class="warnbox"><b>A file you did not make yourself.</b> Everything below still '+
         'applies, but what you measure describes the file in front of you, not the disc it came '+
@@ -392,7 +420,11 @@
       'the commands below are showing example paths.</div>');
     else h.push('<div class="note" style="margin:0 0 4px">Reading that as <b>'+esc(srcLabel())+
       '</b>. Change the dropdown at the top if that is wrong.</div>');
-    h.push('<h2>Steps</h2><div id="stephost">'+stepsHtml()+'</div>');
+    h.push('<h2>Or type it yourself</h2>');
+    h.push('<div class="note" style="margin:0 0 8px">The same work, one command at a time. Useful '+
+      'when something goes wrong and you want to see each step, or when you are on a machine '+
+      'without the scripts.</div>');
+    h.push('<div id="stephost">'+stepsHtml()+'</div>');
 
     h.push('<h2>Is it really an untouched rip?</h2>');
     h.push('<div class="note">Paste an ffprobe report and it will tell you whether the numbers '+
