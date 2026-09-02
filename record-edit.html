@@ -133,7 +133,7 @@
     Releases:{ label:'Releases', title:function(r){return r.Title_On_Release||'(untitled)';},
       sub:function(r,ctx){var l=ctx.Labels[r.Label],f=ctx.Films[r.Film];
         return [(f&&f.Original_Title)||'',r.Format,(l&&l.Name)||'',r.Country,r.Region_Code,
-                r.Ownership].filter(Boolean).join(' \u00b7 ');},
+                r.Ownership,r.Verified?'\u2713 verified':''].filter(Boolean).join(' \u00b7 ');},
       search:['Title_On_Release','Format','Country','Catalog_Number','Region_Code'],
       searchRef:[['Label','Labels','Name'],['Film','Films','Original_Title']],
       fields:[
@@ -157,6 +157,8 @@
        {id:'Purchase_Date',t:'date'},{id:'Purchase_Price',t:'num'},
        {id:'Purchase_Source',t:'text'},{id:'Store_URL',t:'text',wide:1},
        {id:'Ripped',t:'bool'},{id:'Untouched_Rip',t:'bool'},{id:'Rip_Path',t:'text',wide:1},
+       {id:'Verified',t:'bool'},{id:'Verified_Date',t:'date'},
+       {id:'Verified_Notes',t:'text',wide:1},
        {id:'Print_Notes',t:'area',wide:1},{id:'Comparison_Notes',t:'area',wide:1},
        {id:'Notes',t:'area',wide:1}]},
 
