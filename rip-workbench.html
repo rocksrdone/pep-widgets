@@ -107,12 +107,28 @@
   function W(){return workDir||outdir();}
   // a file in that folder: bare name when we cd first, full path otherwise
   function P(name){return useCd?qq(name):qq(join(W(),name));}
+  function parentOf(p){
+    var i=Math.max(p.lastIndexOf('\\'),p.lastIndexOf('/'));
+    return i>0?p.slice(0,i):p;
+  }
+  function baseOf(p){
+    var i=Math.max(p.lastIndexOf('\\'),p.lastIndexOf('/'));
+    return i>=0?p.slice(i+1):p;
+  }
+  // the folder holding VIDEO_TS, and the VIDEO_TS folder itself
+  function vtsParts(){
+    var d=W();
+    if(/^video_ts$/i.test(baseOf(d)))return {parent:parentOf(d),name:baseOf(d)};
+    return {parent:d,name:'VIDEO_TS'};
+  }
+  function cdTo(dir){
+    return (os==='win'
+      ? (/^[A-Za-z]:/.test(dir)?dir.slice(0,2)+'\n':'')+'cd '+qq(dir)
+      : 'cd '+qq(dir))+'\n';
+  }
   function cdLine(){
     if(!useCd)return '';
-    var d=W();
-    return (os==='win'
-      ? (/^[A-Za-z]:/.test(d)?d.slice(0,2)+'\n':'')+'cd '+qq(d)
-      : 'cd '+qq(d))+'\n';
+    return cdTo(W());
   }
   function hashCmd(f){return os==='win'?'certutil -hashfile '+f+' SHA256':'sha256sum '+f;}
 
@@ -140,11 +156,13 @@
           tool('ffmpeg')+' -hide_banner -ss 00:10:00 -i '+target+
           ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+rep};
     };
-    var F=function(def){return P(fileName||def);};
+    var F=function(def){return P(safeFile(def));};
 
     if(src==='dvd'){
       S.push({h:'See what is on the disc',
-        p:'Lists every title with its length. The feature is nearly always the longest.',
+        p:'Needs a real disc in a real drive. If you are working from a folder or an image on '+
+          'disk, change the dropdown at the top — <code>disc:0</code> will only ever report '+
+          'that it cannot find a drive.',
         c:mkv()+' -r info disc:0'});
       S.push({h:'Rip every title losslessly',
         p:'MakeMKV remuxes rather than re-encodes, so the video is bit-for-bit what is on the disc. '+
@@ -156,17 +174,46 @@
           '<code>Untouched_Rip</code> on the release. Everything later is derived from this.',c:''});
     }
     if(src==='videots'){
-      S.push({h:'Rip from the folder',
-        p:'MakeMKV reads a VIDEO_TS folder as happily as a disc, and still picks up the languages '+
-          'from the IFO files.',
-        c:cdLine()+mkv()+' --minlength=60 mkv file:'+(useCd?qq('VIDEO_TS'):qq(join(W(),'VIDEO_TS')))+
-          ' all '+O});
-      S.push(probe(F('title_t00.mkv')));
-      S.push({h:'Or probe the VOB directly',
-        p:'Quicker if you only want the numbers. Expect blank languages \u2014 those live in the IFO, '+
-          'not the VOB.',
-        c:cdLine()+tool('ffprobe')+' -v error -print_format json -show_format -show_streams '+
-          (useCd?qq(join('VIDEO_TS','VTS_01_1.VOB')):qq(join(join(W(),'VIDEO_TS'),'VTS_01_1.VOB')))});
+      var vp=vtsParts();
+      // MakeMKV is fussy about relative paths, so these are always absolute
+      var VTS=qq(join(vp.parent,vp.name));
+      var RIP=qq(join(vp.parent,'rip'));
+      S.push({h:'What is about to happen',
+        p:'<div class="paths">Reading from <b>'+esc(join(vp.parent,vp.name))+'</b><br>'+
+          'Writing the MKV to <b>'+esc(join(vp.parent,'rip'))+'</b><br>'+
+          'So the rip sits beside VIDEO_TS, not inside it.</div>'+
+          'You do not name the file yourself \u2014 MakeMKV calls it something like '+
+          '<code>title_t00.mkv</code>. The file box above only matters at the probing step, '+
+          'once that file exists.',c:''});
+      var REP=qq(join(join(vp.parent,'rip'),'peplum-report.txt'));
+      var MK=qq(join(join(vp.parent,'rip'),safeFile('title_t00.mkv')));
+      S.push({h:'Make somewhere for the output',
+        p:'The rip lands in a <b>rip</b> folder beside VIDEO_TS, so it never mixes with the VOBs. '+
+          'MakeMKV will not create that folder itself.',
+        c:(os==='win'?'mkdir ':'mkdir -p ')+RIP});
+      S.push({h:'Rip the folder',
+        p:'Note it points at <b>'+esc(join(vp.parent,vp.name))+'</b> using a full path, so it does '+
+          'not matter which folder your prompt is sitting in. MakeMKV reads the IFO files, so '+
+          'unlike a raw VOB you keep the language tags and chapters.',
+        c:mkv()+' --minlength=60 mkv file:'+VTS+' all '+RIP});
+      S.push({h:'Probe the rip and record the numbers',
+        p:'Writes one file holding the technical report plus a measurement of the black bars. '+
+          'Paste it into <b>release-add</b> and the form fills itself. Change the file name above '+
+          'if MakeMKV named it something other than title_t00.mkv.',
+        c:tool('ffprobe')+' -v error -print_format json -show_format -show_streams -show_chapters '+
+          MK+' > '+REP+'\n'+
+          (os==='win'?'echo ===CROPDETECT=== >> ':'echo "===CROPDETECT===" >> ')+REP+'\n'+
+          tool('ffmpeg')+' -hide_banner -ss 00:10:00 -i '+MK+
+          ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+REP});
+      S.push({h:'If MakeMKV refuses or the disc is damaged',
+        p:'Remuxes the VOBs directly. Streams are copied untouched, so the picture is identical, '+
+          'but you lose chapters and language tags. The extra flags force it past bad sectors and '+
+          'rebuild missing timestamps.',
+        c:tool('ffmpeg')+' -fflags +genpts+igndts -err_detect ignore_err -analyzeduration 100M '+
+          '-probesize 100M -i "concat:'+
+          [1,2,3,4,5].map(function(n){return join(join(vp.parent,vp.name),'VTS_01_'+n+'.VOB');}).join('|')+
+          '" -map 0:v -map 0:a -c copy -avoid_negative_ts make_zero '+
+          qq(join(join(vp.parent,'rip'),'remux.mkv'))});
     }
     if(src==='iso'){
       S.push({h:'Rip straight from the image',
@@ -286,11 +333,15 @@
       'switches the whole set. Blank means the tool is already on your PATH.</div></fieldset>');
 
     h.push('<fieldset><legend>This job</legend><div class="row">'+
-      '<div style="grid-column:span 2"><label>Folder these files are in</label>'+
+      '<div style="grid-column:span 2"><label>'+esc(fld().dir)+'</label>'+
       '<input id="o_dir" value="'+esc(workDir)+'" placeholder="'+
-        (os==='win'?'D:\\Rips\\Afrodite (1958)':'/mnt/nas/rips/afrodite')+'"></div>'+
-      '<div><label>File name</label><input id="o_file" value="'+esc(fileName)+
-        '" placeholder="title_t00.mkv"></div>'+
+        esc(os==='win'?fld().dirPh:fld().dirPh.replace(/^[A-Z]:\\/,'/mnt/').replace(/\\/g,'/'))+
+        '"></div>'+
+      '<div><label>'+esc(fld().file)+
+        (fld().fileWhen?' <span style="opacity:.7">\u2014 '+esc(fld().fileWhen)+'</span>':'')+
+        '</label><input id="o_file" value="'+esc(fileName)+
+        '" placeholder="'+esc(fld().filePh)+'"'+
+        (fld().fileWhen?' class="dim"':'')+'></div>'+
       '</div><div class="row"><div style="grid-column:1/-1">'+
       '<label style="display:flex;gap:6px;align-items:center;color:var(--fg);font-size:12px">'+
       '<input type="checkbox" id="o_cd" style="width:auto"'+(useCd?' checked':'')+
@@ -301,7 +352,7 @@
       '<br><span style="font-size:10.5px">In Explorer, Shift+right-click a file or folder and '+
       'choose <b>Copy as path</b> to get the folder above. On Linux, copy it from the address bar '+
       'in your file manager.</span></div>'+
-      '<input type="file" id="fpick" style="display:none"></fieldset>');
+      '<input type="file" id="fpick" style="display:none">'+fileWarn()+'</fieldset>');
 
     if(src==='download'){
       h.push('<div class="warnbox"><b>A file you did not make yourself.</b> Everything below still '+
@@ -309,6 +360,10 @@
         'from. Record it, mark it unverified, and replace it when you find a real source.</div>');
     }
 
+    if(!workDir)h.push('<div class="warnbox">Paste the folder above before copying anything \u2014 '+
+      'the commands below are showing example paths.</div>');
+    else h.push('<div class="note" style="margin:0 0 4px">Reading that as <b>'+esc(srcLabel())+
+      '</b>. Change the dropdown at the top if that is wrong.</div>');
     h.push('<h2>Steps</h2><div id="stephost">'+stepsHtml()+'</div>');
 
     h.push('<h2>Is it really an untouched rip?</h2>');
@@ -333,6 +388,57 @@
     bind();
   }
 
+  function detectSrc(){
+    var p=(workDir+' '+fileName).toLowerCase();
+    var was=src;
+    if(/\.iso(\s|$)/.test(p))src='iso';
+    else if(/video_ts/.test(p))src='videots';
+    else if(/bdmv|\bstream\b|\.m2ts/.test(p))src='bluray';
+    else if(/\.(mkv|mp4|m4v|avi)(\s|$)/.test(p))src='mine';
+    if(src!==was){
+      var sel=document.getElementById('src');
+      if(sel)sel.value=src;
+      return true;
+    }
+    return false;
+  }
+  var FIELDS={
+    dvd:{dir:'Where to save the rip',dirPh:'D:\\Rips\\Afrodite (1958)',
+         file:'MKV name after ripping',filePh:'title_t00.mkv',
+         ok:/\.mkv$/i,fileWhen:'only used by the probe step, after the rip exists'},
+    videots:{dir:'Path to the VIDEO_TS folder (or the folder holding it)',
+         dirPh:'D:\\Rips\\Afrodite (1958)\\VIDEO_TS',
+         file:'MKV name after ripping',filePh:'title_t00.mkv',
+         ok:/\.mkv$/i,fileWhen:'only used by the probe step, after the rip exists'},
+    iso:{dir:'Folder holding the ISO',dirPh:'D:\\Images',
+         file:'ISO file name',filePh:'film.iso',ok:/\.iso$/i,fileWhen:''},
+    bluray:{dir:'Where to save the rip',dirPh:'D:\\Rips\\Film',
+         file:'MKV name after ripping',filePh:'title_t00.mkv',
+         ok:/\.mkv$/i,fileWhen:'only used by the probe step, after the rip exists'},
+    mine:{dir:'Folder holding the file',dirPh:'D:\\Rips\\Afrodite (1958)',
+         file:'File name',filePh:'Afrodite (1958) Medusa.mkv',
+         ok:/\.(mkv|mp4|m4v|avi|m2ts|ts)$/i,fileWhen:''},
+    download:{dir:'Folder holding the file',dirPh:'D:\\Downloads',
+         file:'File name',filePh:'unknown.mkv',
+         ok:/\.(mkv|mp4|m4v|avi|m2ts|ts)$/i,fileWhen:''}
+  };
+  function fld(){return FIELDS[src]||FIELDS.mine;}
+  // ignore anything that is not the kind of file this step needs
+  function safeFile(def){
+    if(!fileName)return def;
+    return fld().ok.test(fileName)?fileName:def;
+  }
+  function fileWarn(){
+    if(!fileName||fld().ok.test(fileName))return '';
+    return '<div class="warnbox" style="margin:7px 0 0;padding:7px 10px">'+
+      '<b>'+esc(fileName)+'</b> is not what this step needs \u2014 expecting something like '+
+      '<code>'+esc(fld().filePh)+'</code>. It is being ignored.</div>';
+  }
+  function srcLabel(){
+    return {dvd:'a disc in the drive',videots:'a VIDEO_TS folder',iso:'an ISO image',
+            bluray:'a Blu-ray',mine:'a finished rip',
+            download:'a file from elsewhere'}[src]||src;
+  }
   function refreshSteps(){
     var host=document.getElementById('stephost');
     if(!host)return;
@@ -367,9 +473,22 @@
       el.onchange=function(){saveOpt(os+p[1],el.value.trim());render();};
     });
     var dirEl=document.getElementById('o_dir');
-    if(dirEl)dirEl.oninput=function(){workDir=this.value.trim();refreshSteps();};
+    if(dirEl)dirEl.oninput=function(){
+      workDir=this.value.trim();
+      if(detectSrc())render(); else refreshSteps();
+    };
     var fEl=document.getElementById('o_file');
-    if(fEl)fEl.oninput=function(){fileName=this.value.trim();refreshSteps();};
+    if(fEl)fEl.oninput=function(){
+      var bad=!!fileName&&!fld().ok.test(fileName);
+      fileName=this.value.trim();
+      var nowBad=!!fileName&&!fld().ok.test(fileName);
+      if(detectSrc()||bad!==nowBad){
+        var pos=fEl.selectionStart;
+        render();
+        var e2=document.getElementById('o_file');
+        if(e2){e2.focus();try{e2.setSelectionRange(pos,pos);}catch(x){}}
+      } else refreshSteps();
+    };
     var cdEl=document.getElementById('o_cd');
     if(cdEl)cdEl.onchange=function(){useCd=this.checked;refreshSteps();};
     var fd=document.getElementById('fdrop'),fp=document.getElementById('fpick');
@@ -378,7 +497,8 @@
       fp.onchange=function(){
         if(!fp.files.length)return;
         fileName=fp.files[0].name;
-        document.getElementById('o_file').value=fileName;refreshSteps();
+        document.getElementById('o_file').value=fileName;
+        if(detectSrc())render(); else refreshSteps();
       };
       ['dragover','dragleave','drop'].forEach(function(ev){
         fd.addEventListener(ev,function(e){
@@ -386,7 +506,8 @@
           fd.style.borderColor=(ev==='dragover')?'var(--ok)':'var(--line)';
           if(ev==='drop'&&e.dataTransfer.files.length){
             fileName=e.dataTransfer.files[0].name;
-            document.getElementById('o_file').value=fileName;refreshSteps();
+            document.getElementById('o_file').value=fileName;
+            if(detectSrc())render(); else refreshSteps();
           }
         });
       });
