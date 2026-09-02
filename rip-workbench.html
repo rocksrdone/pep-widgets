@@ -66,6 +66,10 @@
 <div id="bar">
   <button class="tab on" data-os="win">Windows</button>
   <button class="tab" data-os="nix">Linux</button>
+  <select id="shell" title="Which prompt you are pasting into">
+    <option value="ps">PowerShell</option>
+    <option value="cmd">Command Prompt</option>
+  </select>
   <select id="src">
     <option value="dvd">DVD disc in the drive</option>
     <option value="videots">VIDEO_TS folder on disk</option>
@@ -81,16 +85,21 @@
 <script>
 (function(){
   "use strict";
-  var os='win',src='dvd',opt={},workDir='',fileName='',useCd=true;
+  var os='win',src='dvd',opt={},workDir='',fileName='',useCd=true,shell='ps';
   var root=document.getElementById('root');
 
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-  function qq(p){return /[\s&()]/.test(p)?'"'+p+'"':p;}
+  function qq(p){return /[\s&()']/.test(p)?'"'+p+'"':p;}
+  function fileArg(p){return '"file:'+p+'"';}
   function join(dir,name){
     if(!dir)return name;
     var sep=(os==='win')?'\\':'/';
     return dir.replace(/[\\/]+$/,'')+sep+name;
+  }
+  function run(exe){
+    // a quoted path at the start of a PowerShell line is just a string
+    return (os==='win'&&shell==='ps'&&/^"/.test(exe)) ? '& '+exe : exe;
   }
   function tool(name){
     var d=opt[os+'_ff']||'';
@@ -150,10 +159,10 @@
         p:'Writes one file holding the full technical report plus a measurement of the black bars. '+
           'Paste it into <b>release-add</b> and the form fills itself.',
         c:cdLine()+
-          tool('ffprobe')+' -v error -print_format json -show_format -show_streams -show_chapters '+
+          run(tool('ffprobe'))+' -v error -print_format json -show_format -show_streams -show_chapters '+
           target+' > '+rep+'\n'+
           (os==='win'?'echo ===CROPDETECT=== >> ':'echo "===CROPDETECT===" >> ')+rep+'\n'+
-          tool('ffmpeg')+' -hide_banner -ss 00:10:00 -i '+target+
+          run(tool('ffmpeg'))+' -hide_banner -ss 00:10:00 -i '+target+
           ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+rep};
     };
     var F=function(def){return P(safeFile(def));};
@@ -163,11 +172,11 @@
         p:'Needs a real disc in a real drive. If you are working from a folder or an image on '+
           'disk, change the dropdown at the top — <code>disc:0</code> will only ever report '+
           'that it cannot find a drive.',
-        c:mkv()+' -r info disc:0'});
+        c:run(mkv())+' -r info disc:0'});
       S.push({h:'Rip every title losslessly',
         p:'MakeMKV remuxes rather than re-encodes, so the video is bit-for-bit what is on the disc. '+
           'It also copies the language tags out of the IFO, which raw VOBs do not carry.',
-        c:cdLine()+mkv()+' --minlength=60 mkv disc:0 all '+O});
+        c:cdLine()+run(mkv())+' --minlength=60 mkv disc:0 all '+O});
       S.push(probe(F('title_t00.mkv')));
       S.push({h:'Keep the untouched rip',
         p:'File it under <b>Untouched Releases</b> in the film folder and tick '+
@@ -195,21 +204,21 @@
         p:'Note it points at <b>'+esc(join(vp.parent,vp.name))+'</b> using a full path, so it does '+
           'not matter which folder your prompt is sitting in. MakeMKV reads the IFO files, so '+
           'unlike a raw VOB you keep the language tags and chapters.',
-        c:mkv()+' --minlength=60 mkv file:'+VTS+' all '+RIP});
+        c:run(mkv())+' --minlength=60 mkv file:'+VTS+' all '+RIP});
       S.push({h:'Probe the rip and record the numbers',
         p:'Writes one file holding the technical report plus a measurement of the black bars. '+
           'Paste it into <b>release-add</b> and the form fills itself. Change the file name above '+
           'if MakeMKV named it something other than title_t00.mkv.',
-        c:tool('ffprobe')+' -v error -print_format json -show_format -show_streams -show_chapters '+
+        c:run(tool('ffprobe'))+' -v error -print_format json -show_format -show_streams -show_chapters '+
           MK+' > '+REP+'\n'+
           (os==='win'?'echo ===CROPDETECT=== >> ':'echo "===CROPDETECT===" >> ')+REP+'\n'+
-          tool('ffmpeg')+' -hide_banner -ss 00:10:00 -i '+MK+
+          run(tool('ffmpeg'))+' -hide_banner -ss 00:10:00 -i '+MK+
           ' -vf cropdetect=24:2:0 -frames:v 300 -f null - 2>> '+REP});
       S.push({h:'If MakeMKV refuses or the disc is damaged',
         p:'Remuxes the VOBs directly. Streams are copied untouched, so the picture is identical, '+
           'but you lose chapters and language tags. The extra flags force it past bad sectors and '+
           'rebuild missing timestamps.',
-        c:tool('ffmpeg')+' -fflags +genpts+igndts -err_detect ignore_err -analyzeduration 100M '+
+        c:run(tool('ffmpeg'))+' -fflags +genpts+igndts -err_detect ignore_err -analyzeduration 100M '+
           '-probesize 100M -i "concat:'+
           [1,2,3,4,5].map(function(n){return join(join(vp.parent,vp.name),'VTS_01_'+n+'.VOB');}).join('|')+
           '" -map 0:v -map 0:a -c copy -avoid_negative_ts make_zero '+
@@ -218,17 +227,17 @@
     if(src==='iso'){
       S.push({h:'Rip straight from the image',
         p:'No need to mount it \u2014 MakeMKV opens ISOs directly.',
-        c:cdLine()+mkv()+' --minlength=60 mkv iso:'+F('film.iso')+' all '+O});
+        c:cdLine()+run(mkv())+' --minlength=60 mkv iso:'+F('film.iso')+' all '+O});
       S.push(probe(F('title_t00.mkv')));
     }
     if(src==='bluray'){
       S.push({h:'List the titles',
         p:'Blu-rays often carry decoy playlists of near-identical length. Compare against the '+
           'runtime you expect before ripping.',
-        c:mkv()+' -r info disc:0'});
+        c:run(mkv())+' -r info disc:0'});
       S.push({h:'Rip the feature',
         p:'Replace <b>all</b> with the title number from the list above if you only want one.',
-        c:cdLine()+mkv()+' --minlength=600 mkv disc:0 all '+O});
+        c:cdLine()+run(mkv())+' --minlength=600 mkv disc:0 all '+O});
       S.push(probe(F('title_t00.mkv')));
     }
     if(src==='mine'){
@@ -319,6 +328,8 @@
 
   // ---- render ----------------------------------------------------------------
   function render(){
+    var sh=document.getElementById('shell');
+    if(sh){sh.style.display=(os==='win')?'':'none';sh.value=shell;}
     var h=[];
     h.push('<fieldset><legend>Where your tools live on '+(os==='win'?'Windows':'Linux')+'</legend>');
     h.push('<div class="row">'+
@@ -534,6 +545,7 @@
     };
   });
   document.getElementById('src').onchange=function(){src=this.value;render();};
+  document.getElementById('shell').onchange=function(){shell=this.value;render();};
 
   grist.ready({requiredAccess:'none'});
   (async function(){
