@@ -506,9 +506,34 @@
     return {n:n,notes:notes,auds:auds.length,subs:subs.length};
   }
 
+  // a UTF-16 file pasted as text arrives with a null byte between every character
+  function fixUtf16(t){
+    if(t.indexOf('\u0000')>=0)
+      return t.split('\u0000').join('').replace(/^\uFEFF/,'');
+    // or, when the browser folded the byte pairs, as CJK with no ASCII at all
+    var head=t.slice(0,400);
+    if(head.length>20 && !/[{"\[]/.test(head) && /[\u2000-\uFFFF]/.test(head)){
+      var out='';
+      for(var i=0;i<t.length;i++){
+        var c=t.charCodeAt(i);
+        out+=String.fromCharCode(c&0xFF)+String.fromCharCode(c>>8);
+      }
+      return out.replace(/\u0000/g,'').replace(/^\uFEFF/,'');
+    }
+    return t;
+  }
+
   function parsePaste(){
-    var txt=document.getElementById('mi').value;
+    var txt=fixUtf16(document.getElementById('mi').value);
     if(!txt.trim()){document.getElementById('mistatus').textContent='Nothing to read.';return;}
+    if(txt.indexOf('"streams"')<0 && txt.indexOf('Complete name')<0 &&
+       !/^\s*[A-Za-z_]+\s*:/m.test(txt)){
+      document.getElementById('mistatus').innerHTML=
+        'That does not look like a report. If the box shows unreadable characters, the file was '+
+        'written in UTF-16 by an old command \u2014 use the <b>peplum-report.txt</b> in the '+
+        '<b>rip</b> folder, the one the script wrote.';
+      return;
+    }
     if(txt.indexOf('"streams"')>=0){
       var pr=parseProbe(txt);
       if(pr){
