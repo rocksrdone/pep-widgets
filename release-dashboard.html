@@ -166,8 +166,9 @@
   }
   function relFolder(r){
     var f=film(r);
-    // fall back to the release's own title when no film is linked
-    var t=clean(f.Original_Title)||clean(r.Title_On_Release);
+    // the sleeve's own title identifies the object; the film folder above it
+    // already says which film this is
+    var t=clean(r.Title_On_Release)||clean(f.Original_Title);
     var head=t+(f.Year?' ('+parseInt(f.Year,10)+')':'');
     var bits=[head,r.Format,clean(labelOf(r)),r.Country,r.Region_Code];
     return bits.filter(Boolean).join(' ');
